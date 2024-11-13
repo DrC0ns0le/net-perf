@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/bandwidth"
+	"github.com/DrC0ns0le/net-perf/link"
 	"github.com/DrC0ns0le/net-perf/measure"
 	"github.com/DrC0ns0le/net-perf/metrics"
 )
@@ -33,6 +34,7 @@ func main() {
 		BufferSize: 1500,
 		Bandwidth:  1,
 		PacketSize: 500,
+		Duration:   5 * time.Second,
 	})
 
 	// start bandwidth measurement server
@@ -41,6 +43,9 @@ func main() {
 	// start measurement workers for bandwidth & latency
 	go measure.Start()
 	defer measure.Stop()
+
+	// start link switch
+	go link.Start()
 
 	// start metrics server
 	metrics.Serve("5120")

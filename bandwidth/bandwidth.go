@@ -115,7 +115,7 @@ func Init(config *Config) {
 	}
 
 	if config.Bandwidth == 0 {
-		bandwidth = 10
+		bandwidth = 1
 	} else {
 		bandwidth = config.Bandwidth
 	}

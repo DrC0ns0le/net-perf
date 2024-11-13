@@ -2,6 +2,9 @@ package measure
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
 	"log"
 	"math"
 	"strconv"
@@ -37,6 +40,16 @@ var (
 )
 
 func startBandwidthWorker(worker *Worker) {
+
+	key := fmt.Sprintf("iface=%s, sourceIP=%s, targetIP=%s, targetPort=%d",
+		worker.iface.Name, worker.sourceIP, worker.targetIP, worker.targetPort)
+
+	hash := sha256.Sum256([]byte(key))
+	h := binary.BigEndian.Uint64(hash[:8])
+
+	randSleep := time.Duration(float64(50*time.Second) * (float64(h) / (1 << 64)))
+	time.Sleep(randSleep)
+
 	// log.Printf("Starting bandwidth measurement on %s\n", worker.iface.Name)
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
