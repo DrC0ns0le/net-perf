@@ -1,13 +1,15 @@
-package utils
+package link
 
 import (
 	"fmt"
 	"log"
 	"os/exec"
 	"strings"
+
+	"github.com/DrC0ns0le/net-perf/utils"
 )
 
-func EnableAsymmetricRoute() {
+func enableAsymmetricRoute() {
 
 	keyValue := map[string]string{
 		"net.ipv4.conf.all.accept_local":       "1",
@@ -18,7 +20,7 @@ func EnableAsymmetricRoute() {
 		"net.ipv4.conf.default.rp_filter":      "0",
 	}
 
-	ifaces, err := GetAllWGInterfaces()
+	ifaces, err := utils.GetAllWGInterfaces()
 	if err != nil {
 		log.Panicf("failed to get interfaces: %v", err)
 	}

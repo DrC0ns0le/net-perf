@@ -2,24 +2,29 @@ package link
 
 import (
 	"log"
-	"math"
 	"os/exec"
+	"strconv"
 	"time"
 
+	"github.com/DrC0ns0le/net-perf/metrics"
 	"github.com/DrC0ns0le/net-perf/utils"
 )
 
 var (
-	localID string
-
+	localID     string
 	justStarted = true
 )
+
+func init() {
+	enableAsymmetricRoute()
+}
 
 func Start() {
 	id, err := utils.GetLocalID()
 	if err != nil {
 		panic(err)
 	}
+
 	localID = id
 	startWorker()
 }
@@ -43,7 +48,6 @@ func mustUpdateRoutes() {
 	if err != nil {
 		log.Panicf("failed to get interfaces: %v", err)
 	}
-	utils.EnableAsymmetricRoute()
 
 	var remoteVersionMap = map[string][]string{}
 
@@ -51,11 +55,22 @@ func mustUpdateRoutes() {
 		remoteVersionMap[iface.RemoteID] = append(remoteVersionMap[iface.RemoteID], iface.IPVersion)
 	}
 
+	lID, err := strconv.Atoi(localID)
+	if err != nil {
+		log.Printf("failed to convert local ID to int: %v", err)
+	}
+
 	for remote, versions := range remoteVersionMap {
 		var version string
 		var reason string
 		if len(versions) > 1 {
-			version, reason, err = choosePreferredVersion(remote)
+
+			rID, err := strconv.Atoi(remote)
+			if err != nil {
+				log.Printf("failed to convert remote ID to int: %v", err)
+			}
+
+			version, _, reason, err = metrics.GetPreferredVersion(lID, rID)
 			if err != nil {
 				log.Printf("failed to determine preferred version: %v", err)
 			}
@@ -98,53 +113,6 @@ func mustUpdateRoutes() {
 			}
 		} else {
 			// log.Printf("route for %s already set to preferred interface %s", remote, iface)
-		}
-	}
-}
-
-// choosePreferredVersion takes a remote endpoint string and returns the preferred
-// IP version to use for communication with that endpoint. It does this by
-// comparing the latency and packet loss metrics for both IPv4 and IPv6
-// connections to the remote endpoint. If the metrics are equal, it returns an
-// empty string. If the metrics for one version are significantly better than
-// the other, it returns that version. Otherwise, it returns the version with the
-// lowest latency.
-func choosePreferredVersion(remote string) (string, string, error) {
-
-	metrics, err := getMetrics(remote)
-	if err != nil {
-		return "", "", err
-	}
-
-	versionScoreMap := map[string]float64{
-		"4": 0.0,
-		"6": 0.0,
-	}
-
-	for v, m := range metrics {
-		if m.Latency == 0 {
-			continue
-		}
-		versionScoreMap[v] = 1 / ((m.Latency / 1e6) * (math.Sqrt(m.PacketLoss / 100)))
-	}
-
-	if int(metrics["4"].Availability) != 1 && int(metrics["6"].Availability) != 1 {
-		if metrics["4"].Availability > metrics["6"].Availability {
-			return "4", "higher availability", nil
-		} else {
-			return "6", "higher availability", nil
-		}
-	} else if versionScoreMap["4"] == math.Inf(1) && versionScoreMap["6"] == math.Inf(1) {
-		if metrics["4"].Latency < metrics["6"].Latency {
-			return "4", "lower latency", nil
-		} else {
-			return "6", "lower latency", nil
-		}
-	} else {
-		if versionScoreMap["4"] > versionScoreMap["6"] {
-			return "4", "higher score", nil
-		} else {
-			return "6", "higher score", nil
 		}
 	}
 }

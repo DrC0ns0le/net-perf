@@ -1,4 +1,4 @@
-package utils
+package metrics
 
 import (
 	"encoding/json"
@@ -25,8 +25,8 @@ type QueryPathResponse struct {
 	} `json:"data"`
 }
 
-// QueryMetrics sends a query to Prometheus and returns the parsed response.
-func QueryMetrics(query string) (*QueryPathResponse, error) {
+// Query sends a query to Prometheus and returns the parsed response.
+func Query(query string) (*QueryPathResponse, error) {
 
 	baseURL := prometheusAddr + "/api/v1/query"
 	params := url.Values{}
