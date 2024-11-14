@@ -1,6 +1,7 @@
 package link
 
 import (
+	"context"
 	"log"
 	"os/exec"
 	"strconv"
@@ -65,12 +66,15 @@ func mustUpdateRoutes() {
 		var reason string
 		if len(versions) > 1 {
 
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+
 			rID, err := strconv.Atoi(remote)
 			if err != nil {
 				log.Printf("failed to convert remote ID to int: %v", err)
 			}
 
-			version, _, reason, err = metrics.GetPreferredVersion(lID, rID)
+			version, _, reason, err = metrics.GetPreferredVersion(ctx, lID, rID)
 			if err != nil {
 				log.Printf("failed to determine preferred version: %v", err)
 			}

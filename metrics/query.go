@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,14 +27,20 @@ type QueryPathResponse struct {
 }
 
 // Query sends a query to Prometheus and returns the parsed response.
-func Query(query string) (*QueryPathResponse, error) {
+func Query(ctx context.Context, query string) (*QueryPathResponse, error) {
 
 	baseURL := prometheusAddr + "/api/v1/query"
 	params := url.Values{}
 	params.Add("query", query)
 	fullURL := baseURL + "?" + params.Encode()
 
-	resp, err := http.Get(fullURL)
+	req, err := http.NewRequest("GET", fullURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error making the request: %v", err)
+	}
+	req = req.WithContext(ctx)
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error making the request: %v", err)
 	}

@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -21,9 +22,9 @@ type PathMetrics struct {
 // empty string. If the metrics for one version are significantly better than
 // the other, it returns that version. Otherwise, it returns the version with the
 // lowest latency.
-func GetPreferredVersion(origin, remote int) (string, *PathMetrics, string, error) {
+func GetPreferredVersion(ctx context.Context, origin, remote int) (string, *PathMetrics, string, error) {
 
-	metrics, err := GetPathMetrics(origin, remote)
+	metrics, err := GetPathMetrics(ctx, origin, remote)
 	if err != nil {
 		return "", nil, "", err
 	}
@@ -71,7 +72,7 @@ func GetPreferredVersion(origin, remote int) (string, *PathMetrics, string, erro
 //     as a percentage.
 //
 // The values are averaged over a 5 minute time window.
-func GetPathMetrics(origin, remote int) (map[string]*PathMetrics, error) {
+func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMetrics, error) {
 
 	var metrics map[string]*PathMetrics
 
@@ -92,7 +93,7 @@ func GetPathMetrics(origin, remote int) (map[string]*PathMetrics, error) {
 	}
 
 	for i, query := range queries {
-		response, err := Query(query)
+		response, err := Query(ctx, query)
 		if err != nil {
 			return metrics, err
 		}
