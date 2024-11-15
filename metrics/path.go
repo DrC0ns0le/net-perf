@@ -9,65 +9,39 @@ import (
 )
 
 type PathMetrics struct {
-	Availability float64
-	Latency      float64
-	Jitter       float64
-	PacketLoss   float64
+	Availability float64 // in percentage (0-1)
+	Latency      float64 // in microseconds
+	Jitter       float64 // in microseconds
+	PacketLoss   float64 // in percentage (0-1)
+	Cost         float64
 }
 
-/*************  ✨ Codeium Command ⭐  *************/
-// GetPreferredPath takes a remote endpoint string and returns the preferred
-// IP version to use for communication with that endpoint. It does this by
-// comparing the latency and packet loss metrics for both IPv4 and IPv6
-// connections to the remote endpoint. If the metrics are equal, it returns an
-// empty string. If the metrics for one version are significantly better than
-// the other, it returns that version. Otherwise, it returns the version with the
-// lowest latency.
-//
-// The returned string is the preferred IP version, the cost of using that version,
-// and a string explaining why that version was chosen.
-/******  63b20803-472b-41ad-b127-165a85a05065  *******/
-func GetPreferredPath(ctx context.Context, origin, remote int) (string, float64, string, error) {
-
+// GetPreferredPath returns the preferred IP version to use for communication with the given remote endpoint
+// along with the associated cost. If no valid paths are available, it returns an empty string and an error.
+func GetPreferredPath(ctx context.Context, origin, remote int) (string, float64, error) {
 	metrics, err := GetPathMetrics(ctx, origin, remote)
 	if err != nil {
-		return "", 0, "", err
+		return "", 0, err
 	}
 
-	versionScoreMap := map[string]float64{
-		"4": 0.0,
-		"6": 0.0,
+	var bestVersion string
+	var bestCost float64 = math.Inf(1)
+
+	for version, path := range metrics {
+		if !math.IsInf(path.Cost, 1) && (math.IsInf(bestCost, 1) || path.Cost < bestCost) {
+			bestVersion = version
+			bestCost = path.Cost
+		}
 	}
 
-	for v, m := range metrics {
-		if m.Latency == 0 {
-			continue
-		}
-		versionScoreMap[v] = 1 / ((m.Latency / 1e6) * (math.Sqrt(m.PacketLoss / 100)))
+	if bestVersion == "" {
+		return "", 0, errors.New("no valid paths available")
 	}
 
-	if int(metrics["4"].Availability) != 1 && int(metrics["6"].Availability) != 1 {
-		if metrics["4"].Availability > metrics["6"].Availability {
-			return "4", calculatePathCost(metrics["4"]), "higher availability", nil
-		} else {
-			return "6", calculatePathCost(metrics["6"]), "higher availability", nil
-		}
-	} else if versionScoreMap["4"] == math.Inf(1) && versionScoreMap["6"] == math.Inf(1) {
-		if metrics["4"].Latency < metrics["6"].Latency {
-			return "4", calculatePathCost(metrics["4"]), "lower latency", nil
-		} else {
-			return "6", calculatePathCost(metrics["6"]), "lower latency", nil
-		}
-	} else {
-		if versionScoreMap["4"] > versionScoreMap["6"] {
-			return "4", calculatePathCost(metrics["4"]), "higher score", nil
-		} else {
-			return "6", calculatePathCost(metrics["6"]), "higher score", nil
-		}
-	}
+	return bestVersion, bestCost, nil
 }
 
-// GetPathMetrics queries prometheus for the average latency and packet loss for both
+// GetPathMetrics queries prometheus for the average latency, packet loss, and availability for both
 // IPv4 and IPv6 paths to the given remote. It returns a map where the keys are the
 // IP versions and the values are PathMetrics objects.
 //
@@ -75,6 +49,7 @@ func GetPreferredPath(ctx context.Context, origin, remote int) (string, float64,
 //   - network_latency_duration: average latency in microseconds
 //   - network_latency_loss and network_bandwidth_packet_loss: average packet loss
 //     as a percentage.
+//   - network_latency_status: average availability as a percentage.
 //
 // The values are averaged over a 5 minute time window.
 func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMetrics, error) {
@@ -127,6 +102,10 @@ func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMe
 		}
 	}
 
+	for _, metric := range metrics {
+		metric.calculatePathCost()
+	}
+
 	return metrics, nil
 }
 
@@ -147,9 +126,10 @@ func GetPathLabel(origin, remote int) string {
 // The cost is a weighted sum of the latency, packet loss and jitter metrics, where the weights are
 // K1, K2 and K3 respectively. If the packet loss is 100% or the availability is 0, the cost is set to
 // positive infinity. Otherwise, the cost is multiplied by 1000 and returned.
-func calculatePathCost(pathMetrics *PathMetrics) float64 {
-	if pathMetrics == nil || pathMetrics.Availability == 0 || pathMetrics.Latency == 0 {
-		return math.Inf(1)
+func (pm *PathMetrics) calculatePathCost() {
+	if pm == nil || pm.Availability == 0 || pm.Latency == 0 {
+		pm.Cost = math.Inf(1)
+		return
 	}
 
 	const (
@@ -158,22 +138,14 @@ func calculatePathCost(pathMetrics *PathMetrics) float64 {
 		K3 = 0.5 // Jitter weight
 	)
 
-	latencyMs := pathMetrics.Latency / 1e6
-	normalizedLoss := pathMetrics.PacketLoss / 100
+	latencyMs := pm.Latency / 1e3
+	jitterMs := pm.Jitter / 1e3
 
+	normalizedLoss := pm.PacketLoss
 	if normalizedLoss >= 1 {
-		return math.Inf(1)
+		pm.Cost = math.Inf(1)
+		return
 	}
 
-	jitterMs := pathMetrics.Jitter / 1e6
-
-	cost := K1*latencyMs +
-		K2*(latencyMs*normalizedLoss/(1-normalizedLoss)) +
-		K3*jitterMs
-
-	if pathMetrics.Availability < 1 {
-		cost /= pathMetrics.Availability
-	}
-
-	return cost * 1000
+	pm.Cost = 1000 * (K1*latencyMs + K2*(latencyMs*normalizedLoss/(1-normalizedLoss)) + K3*jitterMs) / pm.Availability
 }

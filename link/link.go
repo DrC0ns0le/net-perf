@@ -63,7 +63,6 @@ func mustUpdateRoutes() {
 
 	for remote, versions := range remoteVersionMap {
 		var version string
-		var reason string
 		if len(versions) > 1 {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -74,7 +73,7 @@ func mustUpdateRoutes() {
 				log.Printf("failed to convert remote ID to int: %v", err)
 			}
 
-			version, _, reason, err = metrics.GetPreferredPath(ctx, lID, rID)
+			version, _, err = metrics.GetPreferredPath(ctx, lID, rID)
 			if err != nil {
 				log.Printf("failed to determine preferred version: %v", err)
 			}
@@ -105,7 +104,7 @@ func mustUpdateRoutes() {
 			}
 		} else if iface != "wg"+localID+"."+remote+"_v"+version {
 			// run "ip route change 10.201.{remote}.0/24 dev wg{local}.{remote}_v{version} scope link"
-			log.Printf("changing route for %s from %s to %s due to %s", remote, iface, "wg"+localID+"."+remote+"_v"+version, reason)
+			log.Printf("changing route for %s from %s to %s", remote, iface, "wg"+localID+"."+remote+"_v"+version)
 			err := exec.Command("ip", "route", "change", "10.201."+remote+".0/24", "dev", "wg"+localID+"."+remote+"_v"+version, "scope", "link", "src", "10.201."+localID+".1").Run()
 			if err != nil {
 				log.Printf("Error executing command: %v\n", err)
