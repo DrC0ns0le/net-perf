@@ -74,7 +74,7 @@ func mustUpdateRoutes() {
 				log.Printf("failed to convert remote ID to int: %v", err)
 			}
 
-			version, _, reason, err = metrics.GetPreferredVersion(ctx, lID, rID)
+			version, _, reason, err = metrics.GetPreferredPath(ctx, lID, rID)
 			if err != nil {
 				log.Printf("failed to determine preferred version: %v", err)
 			}
