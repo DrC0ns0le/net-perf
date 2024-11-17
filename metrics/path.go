@@ -147,5 +147,5 @@ func (pm *PathMetrics) calculatePathCost() {
 		return
 	}
 
-	pm.Cost = 1000 * (K1*latencyMs + K2*(latencyMs*normalizedLoss/(1-normalizedLoss)) + K3*jitterMs) / pm.Availability
+	pm.Cost = (K1*latencyMs + K2*(latencyMs*normalizedLoss/(1-normalizedLoss)) + K3*jitterMs) / pm.Availability
 }
