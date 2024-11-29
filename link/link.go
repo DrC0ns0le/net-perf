@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/metrics"
+	"github.com/DrC0ns0le/net-perf/system"
 	"github.com/DrC0ns0le/net-perf/utils"
 )
 
@@ -15,10 +16,6 @@ var (
 	localID     string
 	justStarted = true
 )
-
-func init() {
-	enableAsymmetricRoute()
-}
 
 func Start() {
 	id, err := utils.GetLocalID()
@@ -87,30 +84,37 @@ func mustUpdateRoutes() {
 		} else {
 			version = versions[0]
 		}
+
+		preferredInterface := "wg" + localID + "." + remote + "_v" + version
+
 		// check which interface is being used
 		iface := utils.GetOutgoingWGInterface(remote)
 
 		if iface == "" {
-			log.Printf("route for %s not found in the routing table, adding route via %s", remote, "wg"+localID+"."+remote+"_v"+version)
-			// run "ip route add 10.201.{remote}.0/24 dev wg{local}.{remote}_v{version} scope link src 10.201.{local}.1"
-			err := exec.Command("ip", "route", "add", "10.201."+remote+".0/24", "dev", "wg"+localID+"."+remote+"_v"+version, "scope", "link", "src", "10.201."+localID+".1").Run()
+			log.Printf("route for %s not found in the routing table, adding route via %s", remote, preferredInterface)
+			// run "ip route add 10.201.{remote}.0/24 dev preferredInterface scope link src 10.201.{local}.1"
+			err := exec.Command("ip", "route", "add", "10.201."+remote+".0/24", "dev", preferredInterface, "scope", "link", "src", "10.201."+localID+".1").Run()
 			if err != nil {
 				log.Printf("Error executing command: %v\n", err)
 			}
-			// run "ip -6 route add fdac:c9:{remote}::/64 dev wg{local}.{remote}_v{version} scope link"
-			err = exec.Command("ip", "-6", "route", "add", "fdac:c9:"+remote+"::/64", "dev", "wg"+localID+"."+remote+"_v"+version, "scope", "link").Run()
+			// run "ip -6 route add fdac:c9:{remote}::/64 dev preferredInterface scope link"
+			err = exec.Command("ip", "-6", "route", "add", "fdac:c9:"+remote+"::/64", "dev", preferredInterface, "scope", "link").Run()
 			if err != nil {
 				log.Printf("Error executing command: %v\n", err)
 			}
-		} else if iface != "wg"+localID+"."+remote+"_v"+version {
-			// run "ip route change 10.201.{remote}.0/24 dev wg{local}.{remote}_v{version} scope link"
-			log.Printf("changing route for %s from %s to %s", remote, iface, "wg"+localID+"."+remote+"_v"+version)
-			err := exec.Command("ip", "route", "change", "10.201."+remote+".0/24", "dev", "wg"+localID+"."+remote+"_v"+version, "scope", "link", "src", "10.201."+localID+".1").Run()
+			err = system.ConfigureInterfaceSysctls(preferredInterface)
+			if err != nil {
+				log.Printf("Error configuring sysctls for %s: %v\n", preferredInterface, err)
+			}
+		} else if iface != preferredInterface {
+			// run "ip route change 10.201.{remote}.0/24 dev preferredInterface scope link"
+			log.Printf("changing route for %s from %s to %s", remote, iface, preferredInterface)
+			err := exec.Command("ip", "route", "change", "10.201."+remote+".0/24", "dev", preferredInterface, "scope", "link", "src", "10.201."+localID+".1").Run()
 			if err != nil {
 				log.Printf("Error executing command: %v\n", err)
 			}
-			// run "ip -6 route change fdac:c9:{remote}::/64 dev wg{local}.{remote}_v{version} scope link"
-			err = exec.Command("ip", "-6", "route", "change", "fdac:c9:"+remote+"::/64", "dev", "wg"+localID+"."+remote+"_v"+version, "scope", "link").Run()
+			// run "ip -6 route change fdac:c9:{remote}::/64 dev preferredInterface scope link"
+			err = exec.Command("ip", "-6", "route", "change", "fdac:c9:"+remote+"::/64", "dev", preferredInterface, "scope", "link").Run()
 			if err != nil {
 				log.Printf("Error executing command: %v\n", err)
 			}

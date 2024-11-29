@@ -12,7 +12,7 @@ type PathMetrics struct {
 	Availability float64 // in percentage (0-1)
 	Latency      float64 // in microseconds
 	Jitter       float64 // in microseconds
-	PacketLoss   float64 // in percentage (0-1)
+	PacketLoss   float64 // in percentage (0-100)
 	Cost         float64
 }
 
@@ -62,9 +62,9 @@ func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMe
 		return metrics, errors.New("could not generate path label")
 	}
 	queries := []string{
-		fmt.Sprintf(`avg(avg_over_time(network_latency_duration{path=~"%s"}[5m])) by (version)`, path),
-		fmt.Sprintf(`avg(avg_over_time(network_latency_loss{path=~"%s"}[5m]),avg_over_time(network_bandwidth_packet_loss{path=~"%s"}[5m])) by (version)`, path, path),
-		fmt.Sprintf(`avg(avg_over_time(network_latency_status{path=~"%s"}[5m])) by (version)`, path),
+		fmt.Sprintf(`avg(avg_over_time(network_latency_duration{path=~"%s"}[15m])) by (version)`, path),
+		fmt.Sprintf(`avg(avg_over_time(network_latency_loss{path=~"%s"}[15m]),avg_over_time(network_bandwidth_packet_loss{path=~"%s"}[15m])) by (version)`, path, path),
+		fmt.Sprintf(`avg(avg_over_time(network_latency_status{path=~"%s"}[15m])) by (version)`, path),
 	}
 
 	metrics = map[string]*PathMetrics{
@@ -123,9 +123,9 @@ func GetPathLabel(origin, remote int) string {
 }
 
 // calculatePathCost calculates a cost for a path based on its latency, packet loss and jitter metrics.
-// The cost is a weighted sum of the latency, packet loss and jitter metrics, where the weights are
-// K1, K2 and K3 respectively. If the packet loss is 100% or the availability is 0, the cost is set to
-// positive infinity. Otherwise, the cost is multiplied by 1000 and returned.
+// The cost calculation is based on the Mathis equation which models TCP throughput in relation to
+// RTT and packet loss. Availability is treated as an additional loss factor, and jitter is included
+// for path stability assessment.
 func (pm *PathMetrics) calculatePathCost() {
 	if pm == nil || pm.Availability == 0 || pm.Latency == 0 {
 		pm.Cost = math.Inf(1)
@@ -133,19 +133,25 @@ func (pm *PathMetrics) calculatePathCost() {
 	}
 
 	const (
-		K1 = 1.0 // Latency weight
-		K2 = 1.0 // Load/Loss weight
-		K3 = 0.5 // Jitter weight
+		K1 = 1.0 // Throughput weight
+		K2 = 0.5 // Jitter weight
+		C  = 1e4 // Mathis equation constant
 	)
 
-	latencyMs := pm.Latency / 1e3
+	rttMs := pm.Latency / 1e3
 	jitterMs := pm.Jitter / 1e3
 
-	normalizedLoss := pm.PacketLoss
-	if normalizedLoss >= 1 {
+	effectiveLoss := (1.0 - pm.Availability) * (pm.PacketLoss / 100)
+
+	if effectiveLoss >= 1 {
 		pm.Cost = math.Inf(1)
 		return
 	}
 
-	pm.Cost = (K1*latencyMs + K2*(latencyMs*normalizedLoss/(1-normalizedLoss)) + K3*jitterMs) / pm.Availability
+	var mathisCost float64
+	if effectiveLoss > 0 {
+		mathisCost = rttMs * C * math.Sqrt(effectiveLoss)
+	}
+
+	pm.Cost = (K1*(rttMs+mathisCost) + K2*jitterMs)
 }
