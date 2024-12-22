@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package management;
+option go_package = "github.com/DrC0ns0le/net-perf/pkg/pb/management;management";
+
+message Route {
+    string address = 1;
+    string next = 2;
+    string interface = 3;
+    int32 metric = 4;
+    int32 protocol = 5;
+}
+
+message RouteTable {
+    repeated Route routes = 1;
+}
+
+message GetRouteTableRequest {}
+
+message GetRouteTableResponse {
+    RouteTable routes = 1;
+}
+
+service Management {
+    rpc GetRouteTable(GetRouteTableRequest) returns (GetRouteTableResponse) {};
+}

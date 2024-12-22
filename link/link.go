@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/metrics"
-	"github.com/DrC0ns0le/net-perf/system"
+	"github.com/DrC0ns0le/net-perf/system/tunables"
 	"github.com/DrC0ns0le/net-perf/utils"
 )
 
@@ -102,7 +102,7 @@ func mustUpdateRoutes() {
 			if err != nil {
 				log.Printf("Error executing command: %v\n", err)
 			}
-			err = system.ConfigureInterfaceSysctls(preferredInterface)
+			err = tunables.ConfigureInterface(preferredInterface)
 			if err != nil {
 				log.Printf("Error configuring sysctls for %s: %v\n", preferredInterface, err)
 			}

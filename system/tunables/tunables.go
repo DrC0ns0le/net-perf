@@ -1,4 +1,4 @@
-package system
+package tunables
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"github.com/DrC0ns0le/net-perf/utils"
 )
 
-func ConfigureInterfaceSysctls(iface string) error {
+func ConfigureInterface(iface string) error {
 	iface = strings.Replace(iface, ".", "/", -1)
 	sysctls := map[string]string{
 		fmt.Sprintf("net.ipv4.conf.%s.forwarding", iface):     "1",
@@ -36,7 +36,7 @@ func ConfigureInterfaceSysctls(iface string) error {
 	return nil
 }
 
-func configureGlobalSysctls() error {
+func configureGlobal() error {
 	sysctls := map[string]string{
 		"net.ipv4.conf.all.accept_local":       "1",
 		"net.ipv4.conf.all.route_localnet":     "1",
@@ -57,8 +57,8 @@ func configureGlobalSysctls() error {
 	return nil
 }
 
-func configureInitSysctls() error {
-	if err := configureGlobalSysctls(); err != nil {
+func Init() error {
+	if err := configureGlobal(); err != nil {
 		return err
 	}
 	// Get WireGuard interfaces
@@ -67,7 +67,7 @@ func configureInitSysctls() error {
 		return fmt.Errorf("failed to get WireGuard interfaces: %v", err)
 	}
 	for _, iface := range wgIfaces {
-		if err := ConfigureInterfaceSysctls(iface.Name); err != nil {
+		if err := ConfigureInterface(iface.Name); err != nil {
 			return err
 		}
 	}
@@ -79,7 +79,7 @@ func configureInitSysctls() error {
 	}
 	for _, iface := range netIfaces {
 		if strings.HasPrefix(iface.Name, "en") {
-			if err := ConfigureInterfaceSysctls(iface.Name); err != nil {
+			if err := ConfigureInterface(iface.Name); err != nil {
 				return err
 			}
 		}

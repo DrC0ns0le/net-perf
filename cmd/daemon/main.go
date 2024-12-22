@@ -6,13 +6,15 @@ import (
 
 	"github.com/DrC0ns0le/net-perf/bandwidth"
 	"github.com/DrC0ns0le/net-perf/link"
+	"github.com/DrC0ns0le/net-perf/management"
 	"github.com/DrC0ns0le/net-perf/measure"
 	"github.com/DrC0ns0le/net-perf/metrics"
 )
 
 var (
-	bandwidthPort = flag.Int("bandwidth.port", 5121, "port for bandwidth measurement server")
-	metricsPort   = flag.Int("metrics.port", 5120, "port for metrics server")
+	managementRPCPort = flag.Int("management.rpcport", 5122, "port for management rpc server")
+	bandwidthPort     = flag.Int("bandwidth.port", 5121, "port for bandwidth measurement server")
+	metricsPort       = flag.Int("metrics.port", 5120, "port for metrics server")
 
 	metricsPath = flag.String("metrics.path", "/metrics", "path for metrics server")
 
@@ -46,6 +48,9 @@ func main() {
 
 	// start link switch
 	go link.Start()
+
+	// start management rpc server
+	go management.MustServe(*managementRPCPort)
 
 	// start metrics server
 	metrics.Serve("5120")

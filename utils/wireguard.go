@@ -14,6 +14,23 @@ type WGInterface struct {
 	IPVersion string
 }
 
+func ParseWGInterface(iface string) (WGInterface, error) {
+	wgPattern := regexp.MustCompile(`^wg(\d+)\.(\d+)_v(\d+)$`)
+
+	matches := wgPattern.FindStringSubmatch(iface)
+
+	if len(matches) != 4 {
+		return WGInterface{}, fmt.Errorf("error parsing wireguard interface name: %s", iface)
+	}
+
+	return WGInterface{
+		Name:      iface,
+		LocalID:   matches[1],
+		RemoteID:  matches[2],
+		IPVersion: matches[3],
+	}, nil
+}
+
 func GetAllWGInterfaces() ([]WGInterface, error) {
 	wgPattern := regexp.MustCompile(`^wg(\d+)\.(\d+)_v(\d+)$`)
 

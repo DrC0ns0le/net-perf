@@ -1,2 +1,1 @@
-net-perf-amd64
-net-perf-arm64
+bin/*
