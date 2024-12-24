@@ -6,7 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/DrC0ns0le/net-perf/utils"
+	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
 func ConfigureInterface(iface string) error {
@@ -32,6 +33,8 @@ func ConfigureInterface(iface string) error {
 			return fmt.Errorf("failed to set interface sysctl %s: %v", key, err)
 		}
 	}
+
+	logging.Infof("Configured interface %s sysctl", iface)
 
 	return nil
 }
@@ -62,7 +65,7 @@ func Init() error {
 		return err
 	}
 	// Get WireGuard interfaces
-	wgIfaces, err := utils.GetAllWGInterfaces()
+	wgIfaces, err := netctl.GetAllWGInterfaces()
 	if err != nil {
 		return fmt.Errorf("failed to get WireGuard interfaces: %v", err)
 	}

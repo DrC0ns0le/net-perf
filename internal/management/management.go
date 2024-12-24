@@ -3,8 +3,8 @@ package management
 import (
 	"context"
 
+	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	pb "github.com/DrC0ns0le/net-perf/pkg/pb/management"
-	"github.com/DrC0ns0le/net-perf/system/netmanager"
 	"github.com/vishvananda/netlink"
 )
 
@@ -13,7 +13,7 @@ type managementServer struct {
 }
 
 func (s *managementServer) GetRouteTable(ctx context.Context, req *pb.GetRouteTableRequest) (*pb.GetRouteTableResponse, error) {
-	routes, err := netmanager.ListManagedRoutes()
+	routes, err := netctl.ListManagedRoutes()
 	if err != nil {
 		return nil, err
 	}

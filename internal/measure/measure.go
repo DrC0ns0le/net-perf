@@ -5,12 +5,12 @@ import (
 	"log"
 	"time"
 
-	"github.com/DrC0ns0le/net-perf/utils"
+	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 )
 
 type Worker struct {
 	// Interface to use
-	iface utils.WGInterface
+	iface netctl.WGInterface
 	// Source IP address
 	sourceIP string
 	// Target IP address
@@ -29,7 +29,7 @@ func Start() {
 	measureGlobalStopCh = make(chan struct{})
 
 	manageWorkers := func() {
-		ifaces, err := utils.GetAllWGInterfaces()
+		ifaces, err := netctl.GetAllWGInterfaces()
 		if err != nil {
 			log.Printf("Error getting interfaces: %v\n", err)
 		}

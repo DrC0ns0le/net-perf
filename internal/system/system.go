@@ -3,7 +3,7 @@ package system
 import (
 	"log"
 
-	"github.com/DrC0ns0le/net-perf/system/tunables"
+	"github.com/DrC0ns0le/net-perf/internal/system/tunables"
 )
 
 func init() {

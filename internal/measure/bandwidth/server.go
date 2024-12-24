@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DrC0ns0le/net-perf/utils"
+	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 )
 
 type Server struct {
@@ -30,7 +30,7 @@ var runningServers []*Server
 
 func Serve() {
 
-	localAddrs, err := utils.GetLocalLoopbackIP()
+	localAddrs, err := netctl.GetLocalLoopbackIP()
 	if err != nil {
 		log.Fatal(err)
 	}

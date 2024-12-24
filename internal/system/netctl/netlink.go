@@ -1,10 +1,10 @@
-package netmanager
+package netctl
 
 import (
 	"fmt"
 	"net"
 
-	"github.com/DrC0ns0le/net-perf/logging"
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )

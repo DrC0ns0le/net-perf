@@ -3,7 +3,6 @@ module github.com/DrC0ns0le/net-perf
 go 1.22.3
 
 require (
-	github.com/DrC0ns0le/net-bird v0.0.0-20241129143118-21e51f2010a2
 	github.com/prometheus/client_golang v1.20.5
 	github.com/vishvananda/netlink v1.3.0
 	google.golang.org/grpc v1.69.2
@@ -12,7 +11,7 @@ require (
 require (
 	github.com/vishvananda/netns v0.0.5 // indirect
 	golang.org/x/text v0.21.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20241219192143-6b3ec007d9bb // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241223144023-3abc09e42ca8 // indirect
 )
 
 require (
@@ -28,5 +27,5 @@ require (
 	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.28.0
-	google.golang.org/protobuf v1.36.0
+	google.golang.org/protobuf v1.36.1
 )

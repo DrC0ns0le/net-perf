@@ -1,4 +1,4 @@
-package link
+package watchdog
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DrC0ns0le/net-perf/metrics"
-	"github.com/DrC0ns0le/net-perf/system/tunables"
-	"github.com/DrC0ns0le/net-perf/utils"
+	"github.com/DrC0ns0le/net-perf/internal/metrics"
+	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
+	"github.com/DrC0ns0le/net-perf/internal/system/tunables"
 )
 
 var (
@@ -18,7 +18,7 @@ var (
 )
 
 func Start() {
-	id, err := utils.GetLocalID()
+	id, err := netctl.GetLocalID()
 	if err != nil {
 		panic(err)
 	}
@@ -42,7 +42,7 @@ func startWorker() {
 
 func mustUpdateRoutes() {
 
-	ifaces, err := utils.GetAllWGInterfaces()
+	ifaces, err := netctl.GetAllWGInterfaces()
 	if err != nil {
 		log.Panicf("failed to get interfaces: %v", err)
 	}
@@ -88,7 +88,7 @@ func mustUpdateRoutes() {
 		preferredInterface := "wg" + localID + "." + remote + "_v" + version
 
 		// check which interface is being used
-		iface := utils.GetOutgoingWGInterface(remote)
+		iface := netctl.GetOutgoingWGInterface(remote)
 
 		if iface == "" {
 			log.Printf("route for %s not found in the routing table, adding route via %s", remote, preferredInterface)

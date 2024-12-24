@@ -9,8 +9,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/DrC0ns0le/net-perf/latency"
-	"github.com/DrC0ns0le/net-perf/utils"
+	"github.com/DrC0ns0le/net-perf/internal/measure/latency"
+	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -93,7 +93,7 @@ func startLatencyWorker(worker *Worker) {
 	}
 }
 
-func generateLatencyMetrics(data latency.Result, iface utils.WGInterface) {
+func generateLatencyMetrics(data latency.Result, iface netctl.WGInterface) {
 	var avgLatency float64
 	var jitter float64
 	var loss float64

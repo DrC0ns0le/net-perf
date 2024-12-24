@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/DrC0ns0le/net-perf/logging"
+	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
 	pb "github.com/DrC0ns0le/net-perf/pkg/pb/management"
-	"github.com/DrC0ns0le/net-perf/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -75,7 +75,7 @@ func main() {
 				}
 
 				if sitesSet[int(ipv4[1])] {
-					wgIf, err := utils.ParseWGInterface(route.Interface)
+					wgIf, err := netctl.ParseWGInterface(route.Interface)
 					if err != nil {
 						logging.Errorf("Error parsing interface %s: %v", route.Interface, err)
 						continue

@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DrC0ns0le/net-perf/bandwidth"
-	"github.com/DrC0ns0le/net-perf/utils"
+	"github.com/DrC0ns0le/net-perf/internal/measure/bandwidth"
+	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -80,7 +80,7 @@ func startBandwidthWorker(worker *Worker) {
 	}
 }
 
-func generateBandwidthMetrics(data bandwidth.Result, iface utils.WGInterface) {
+func generateBandwidthMetrics(data bandwidth.Result, iface netctl.WGInterface) {
 	var (
 		jitter     float64
 		outOfOrder float64

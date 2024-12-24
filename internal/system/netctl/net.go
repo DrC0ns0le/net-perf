@@ -1,4 +1,4 @@
-package netmanager
+package netctl
 
 const (
 	// CustomRouteProtocol is a unique identifier for routes managed by this package
