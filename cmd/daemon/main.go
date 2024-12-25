@@ -20,8 +20,7 @@ import (
 )
 
 var (
-	wgUpdateCh = flag.Int("wg.updatech", 10, "channel size for wg interface updates")
-	rtUpdateCh = flag.Int("rt.updatech", 10, "channel size for route table updates")
+	updateChBufSize = flag.Int("wg.updatech", 10, "channel size for wg interface updates")
 
 	err error
 )
@@ -30,9 +29,10 @@ func main() {
 	flag.Parse()
 
 	node := &system.Node{
-		GlobalStopCh: make(chan struct{}),
-		WGChangeCh:   make(chan netctl.WGInterface, *wgUpdateCh),
-		RTChangeCh:   make(chan struct{}, *rtUpdateCh),
+		GlobalStopCh:    make(chan struct{}),
+		WGUpdateCh:      make(chan netctl.WGInterface, *updateChBufSize),
+		RTUpdateCh:      make(chan struct{}, *updateChBufSize),
+		MeasureUpdateCh: make(chan struct{}, *updateChBufSize),
 	}
 
 	siteID, err := netctl.GetLocalID()
@@ -55,7 +55,7 @@ func main() {
 	go bandwidth.Serve()
 
 	// start measurement workers for bandwidth & latency
-	go measure.Start()
+	go measure.Start(node)
 
 	// start management rpc server
 	go management.Serve()

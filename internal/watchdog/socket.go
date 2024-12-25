@@ -46,14 +46,14 @@ func Serve(global *system.Node) error {
 					continue
 				}
 			}
-			go HandleConnection(conn, global.WGChangeCh)
+			go HandleConnection(conn, global.WGUpdateCh)
 		}
 	}()
 
 	return nil
 }
 
-func HandleConnection(conn net.Conn, wgChangeCh chan netctl.WGInterface) {
+func HandleConnection(conn net.Conn, WGUpdateCh chan netctl.WGInterface) {
 	defer conn.Close()
 
 	conn.SetReadDeadline(time.Now().Add(*SocketConnectionTimeout))
@@ -81,7 +81,7 @@ func HandleConnection(conn net.Conn, wgChangeCh chan netctl.WGInterface) {
 			}
 
 			select {
-			case wgChangeCh <- wgIface:
+			case WGUpdateCh <- wgIface:
 				conn.Write([]byte("OK\n"))
 			case <-time.After(*SocketConnectionTimeout):
 				conn.Write([]byte("ERROR: timeout writing to channel\n"))

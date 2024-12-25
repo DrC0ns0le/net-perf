@@ -9,12 +9,13 @@ import (
 
 type Node struct {
 	GlobalStopCh chan struct{}
-	WGChangeCh   chan netctl.WGInterface
-	RTChangeCh   chan struct{}
+	WGUpdateCh   chan netctl.WGInterface
+	RTUpdateCh   chan struct{}
 
-	MeasureWatchDogCh chan struct{}
+	MeasureUpdateCh chan struct{}
 
-	SiteID int
+	SiteID  int
+	LocalIP string
 }
 
 func init() {

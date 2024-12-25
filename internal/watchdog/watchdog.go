@@ -52,13 +52,15 @@ func Start(global *system.Node) {
 					logging.Errorf("failed to update routes: %v", err)
 				}
 			}()
-		case iface = <-global.WGChangeCh:
+		case iface = <-global.WGUpdateCh:
 			go func() {
 				err := w.handleNewInterface(iface.Name)
 				if err != nil {
 					logging.Errorf("failed to handle new interface: %v", err)
 				}
 			}()
+
+			global.MeasureUpdateCh <- struct{}{}
 
 		case <-global.GlobalStopCh:
 			return

@@ -1,1 +1,0 @@
-GOOS=linux GOARCH=amd64 go build -o net-perf-amd64 && GOOS=linux GOARCH=arm64 go build -o net-perf-arm64

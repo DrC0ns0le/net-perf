@@ -2,9 +2,9 @@ package measure
 
 import (
 	"fmt"
-	"log"
 	"time"
 
+	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
@@ -23,12 +23,9 @@ type Worker struct {
 	stopCh chan struct{}
 }
 
-var measureGlobalStopCh chan struct{}
 var workerMap = make(map[string]*Worker)
 
-func Start() {
-	measureGlobalStopCh = make(chan struct{})
-
+func Start(global *system.Node) {
 	manageWorkers := func() {
 		ifaces, err := netctl.GetAllWGInterfaces()
 		if err != nil {
@@ -52,7 +49,7 @@ func Start() {
 
 		for _, iface := range ifaces {
 			if _, ok := workerMap[iface.Name]; !ok {
-				log.Printf("Found new WG interface: %s\n", iface.Name)
+				logging.Infof("Found new WG interface: %s\n", iface.Name)
 				worker := &Worker{
 					iface:      iface,
 					stopCh:     make(chan struct{}),
@@ -73,18 +70,20 @@ func Start() {
 		select {
 		case <-ticker.C:
 			manageWorkers()
-		case <-measureGlobalStopCh:
+		case <-global.MeasureUpdateCh:
+			manageWorkers()
+		case <-global.GlobalStopCh:
+			stop()
 			return
 		}
 	}
 }
 
-func Stop() {
+func stop() {
 	logging.Info("Stopping measurement workers...")
 	for _, w := range workerMap {
 		close(w.stopCh)
 	}
-	close(measureGlobalStopCh)
 }
 
 func generatePathName(src, dst string) string {
