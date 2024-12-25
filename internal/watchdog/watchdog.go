@@ -27,16 +27,20 @@ func Start(global *system.Node) {
 		localID: global.SiteID,
 	}
 
-	logging.Infof("starting watchdog service")
+	logging.Infof("Starting watchdog service")
 
 	err := Serve(global)
 	if err != nil {
 		logging.Errorf("failed to start watchdog socket: %v", err)
 	}
 
-	err = updateRoutes(true, global.SiteID)
+	updated, err := updateRoutes(true, global.SiteID)
 	if err != nil {
 		log.Fatalf("failed to update routes: %v", err)
+	}
+
+	if updated {
+		global.RTUpdateCh <- struct{}{}
 	}
 
 	var iface netctl.WGInterface
@@ -47,9 +51,13 @@ func Start(global *system.Node) {
 		select {
 		case <-ticker.C:
 			go func() {
-				err := updateRoutes(false, global.SiteID)
+				updated, err := updateRoutes(false, global.SiteID)
 				if err != nil {
 					logging.Errorf("failed to update routes: %v", err)
+				}
+
+				if updated {
+					global.RTUpdateCh <- struct{}{}
 				}
 			}()
 		case iface = <-global.WGUpdateCh:
@@ -61,6 +69,7 @@ func Start(global *system.Node) {
 			}()
 
 			global.MeasureUpdateCh <- struct{}{}
+			global.RTUpdateCh <- struct{}{}
 
 		case <-global.GlobalStopCh:
 			return

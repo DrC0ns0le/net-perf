@@ -12,9 +12,11 @@ import (
 	"github.com/DrC0ns0le/net-perf/internal/measure"
 	"github.com/DrC0ns0le/net-perf/internal/measure/bandwidth"
 	"github.com/DrC0ns0le/net-perf/internal/metrics"
+	"github.com/DrC0ns0le/net-perf/internal/route"
 	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/internal/watchdog"
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
 
 	_ "github.com/DrC0ns0le/net-perf/internal/system"
 )
@@ -26,6 +28,9 @@ var (
 )
 
 func main() {
+
+	logging.Infof("Starting net-perf daemon")
+
 	flag.Parse()
 
 	node := &system.Node{
@@ -59,6 +64,9 @@ func main() {
 
 	// start management rpc server
 	go management.Serve()
+
+	// route management
+	go route.Start(node)
 
 	// wait for termination signal
 	sig := make(chan os.Signal, 1)

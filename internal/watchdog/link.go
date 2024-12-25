@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"os/exec"
 	"strconv"
@@ -17,11 +16,13 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-func updateRoutes(justStarted bool, localID int) error {
+func updateRoutes(justStarted bool, localID int) (bool, error) {
+
+	var updated bool
 
 	ifaces, err := netctl.GetAllWGInterfaces()
 	if err != nil {
-		return fmt.Errorf("failed to get WireGuard interfaces: %v", err)
+		return false, fmt.Errorf("failed to get WireGuard interfaces: %v", err)
 	}
 
 	var remoteVersionMap = map[string][]string{}
@@ -30,8 +31,9 @@ func updateRoutes(justStarted bool, localID int) error {
 		remoteVersionMap[iface.RemoteID] = append(remoteVersionMap[iface.RemoteID], iface.IPVersion)
 	}
 
+	var version string
 	for remote, versions := range remoteVersionMap {
-		var version string
+		version = ""
 		if len(versions) > 1 {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -39,18 +41,29 @@ func updateRoutes(justStarted bool, localID int) error {
 
 			rID, err := strconv.Atoi(remote)
 			if err != nil {
-				return fmt.Errorf("failed to convert remote ID to int: %v", err)
+				return false, fmt.Errorf("failed to convert remote ID to int: %v", err)
 			}
 
 			version, _, err = metrics.GetPreferredPath(ctx, localID, rID)
 			if err != nil {
-				return fmt.Errorf("failed to get preferred path: %v", err)
+				var netErr *net.OpError
+				switch {
+				case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr):
+					logging.Errorf("timed out getting preferred interface version for %d, assuming v4", rID)
+					version = "4"
+				case errors.Is(err, metrics.ErrNoPaths):
+					// means prometheus has no metrics
+					logging.Infof("neither v4 nor v6 are preferred for %d, assuming v4", rID)
+					version = "4"
+				default:
+					return false, fmt.Errorf("failed to get preferred interface version: %v", err)
+				}
 			}
 
 			if justStarted {
 				version = "4"
 			} else if version == "" {
-				logging.Debugf("neither v4 nor v6 are preferred for %s, skipping", remote)
+				logging.Infof("neither v4 nor v6 are preferred for %s, skipping", remote)
 				continue
 			}
 		} else {
@@ -63,39 +76,39 @@ func updateRoutes(justStarted bool, localID int) error {
 		iface := netctl.GetOutgoingWGInterface(remote)
 
 		if iface == "" {
-			log.Printf("route for %s not found in the routing table, adding route via %s", remote, preferredInterface)
+			logging.Errorf("Warning:route for %s not found in the routing table, adding route via %s", remote, preferredInterface)
 			// run "ip route add 10.201.{remote}.0/24 dev preferredInterface scope link src 10.201.{local}.1"
 			err := exec.Command("ip", "route", "add", "10.201."+remote+".0/24", "dev", preferredInterface, "scope", "link", "src", "10.201."+strconv.Itoa(localID)+".1").Run()
 			if err != nil {
-				log.Printf("Error executing command: %v\n", err)
+				return false, fmt.Errorf("error executing ip add command: %w", err)
 			}
 			// run "ip -6 route add fdac:c9:{remote}::/64 dev preferredInterface scope link"
 			err = exec.Command("ip", "-6", "route", "add", "fdac:c9:"+remote+"::/64", "dev", preferredInterface, "scope", "link").Run()
 			if err != nil {
-				log.Printf("Error executing command: %v\n", err)
+				return false, fmt.Errorf("error executing ip -6 add command: %w", err)
 			}
 			err = tunables.ConfigureInterface(preferredInterface)
 			if err != nil {
-				log.Printf("Error configuring sysctls for %s: %v\n", preferredInterface, err)
+				logging.Errorf("Error configuring sysctls for %s: %v\n", preferredInterface, err)
 			}
 		} else if iface != preferredInterface {
 			// run "ip route change 10.201.{remote}.0/24 dev preferredInterface scope link"
-			log.Printf("changing route for %s from %s to %s", remote, iface, preferredInterface)
+			logging.Infof("changing route for %s from %s to %s", remote, iface, preferredInterface)
 			err := exec.Command("ip", "route", "change", "10.201."+remote+".0/24", "dev", preferredInterface, "scope", "link", "src", "10.201."+strconv.Itoa(localID)+".1").Run()
 			if err != nil {
-				log.Printf("Error executing command: %v\n", err)
+				return false, fmt.Errorf("error executing ip change command: %w", err)
 			}
 			// run "ip -6 route change fdac:c9:{remote}::/64 dev preferredInterface scope link"
 			err = exec.Command("ip", "-6", "route", "change", "fdac:c9:"+remote+"::/64", "dev", preferredInterface, "scope", "link").Run()
 			if err != nil {
-				log.Printf("Error executing command: %v\n", err)
+				return false, fmt.Errorf("error executing ip -6 change command: %w", err)
 			}
 		} else {
-			logging.Debugf("route for %s already set to preferred interface %s", remote, iface)
+			logging.Debugf("Route for %s already set to preferred interface %s", remote, iface)
 		}
 	}
 
-	return nil
+	return updated, nil
 }
 
 func addLinkRoute(localID int, remoteID int) error {
@@ -110,8 +123,9 @@ func addLinkRoute(localID int, remoteID int) error {
 
 	version, _, err := metrics.GetPreferredPath(ctx, localID, remoteID)
 	if err != nil {
+		var netErr *net.OpError
 		switch {
-		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr):
 			logging.Debugf("timed out getting preferred interface version for %d, assuming v4", remoteID)
 		case errors.Is(err, metrics.ErrNoPaths):
 			logging.Debugf("neither v4 nor v6 are preferred for %d, assuming v4", remoteID)

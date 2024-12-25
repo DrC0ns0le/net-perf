@@ -12,6 +12,7 @@ import (
 
 	"github.com/DrC0ns0le/net-perf/internal/measure/bandwidth"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -63,7 +64,7 @@ func startBandwidthWorker(worker *Worker) {
 				// measure
 				data, err := bandwidth.MeasureUDP(ctx, worker.sourceIP, worker.targetIP)
 				if err != nil {
-					log.Println("Error measuring UDP bandwidth: ", err)
+					logging.Errorf("%s: error measuring UDP bandwidth: %v", worker.iface.Name, err)
 				}
 
 				// generate metrics
@@ -71,7 +72,7 @@ func startBandwidthWorker(worker *Worker) {
 			}()
 
 		case <-worker.stopCh:
-			log.Printf("Stopping bandwidth measurement on %s\n", worker.iface.Name)
+			log.Printf("Stopping bandwidth measurement on %s", worker.iface.Name)
 
 			// Set metrics to NaN
 			generateBandwidthMetrics(bandwidth.Result{}, worker.iface)

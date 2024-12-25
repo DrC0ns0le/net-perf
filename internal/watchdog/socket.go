@@ -31,8 +31,7 @@ func Serve(global *system.Node) error {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 
-	logging.Infof("watchdog socket listening at %s", *SocketPath)
-
+	logging.Infof("Watchdog socket listening at %s", *SocketPath)
 	go func() {
 		for {
 			conn, err := listener.Accept()

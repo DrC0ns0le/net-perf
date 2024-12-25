@@ -57,7 +57,7 @@ func startLatencyWorker(worker *Worker) {
 				// measure
 				data, err := latency.MeasureTCP(ctx, worker.sourceIP, worker.targetIP, worker.targetPort)
 				if err != nil {
-					log.Println("Error measuring TCP latency:", err)
+					log.Println("%s: error measuring TCP latency:", worker.iface.Name, err)
 				}
 
 				// generate metrics

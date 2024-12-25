@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/DrC0ns0le/net-perf/internal/route"
 )
 
 type WGInterface struct {
@@ -39,14 +37,14 @@ func GetOutgoingWGInterface(dst string) string {
 // GetWGRouteTable reads the /proc/net/route file and returns a slice of Route objects, each
 // representing a route in the table that is related to a WireGuard interface.
 // Ignores any lines that do not correspond to a WireGuard interface.
-func GetWGRouteTable() ([]route.Route, error) {
+func GetWGRouteTable() ([]Route, error) {
 	file, err := os.Open("/proc/net/route")
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	var routes []route.Route
+	var routes []Route
 	scanner := bufio.NewScanner(file)
 
 	// Skip the header line
@@ -82,7 +80,7 @@ func GetWGRouteTable() ([]route.Route, error) {
 			continue
 		}
 
-		routes = append(routes, route.Route{
+		routes = append(routes, Route{
 			Destination: dest,
 			Gateway:     gateway,
 			Flags:       int(flags),

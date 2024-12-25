@@ -29,7 +29,7 @@ func Start(global *system.Node) {
 	manageWorkers := func() {
 		ifaces, err := netctl.GetAllWGInterfaces()
 		if err != nil {
-			logging.Errorf("Error getting interfaces: %v\n", err)
+			logging.Errorf("Error getting interfaces: %v", err)
 		}
 
 		for i, w := range workerMap {
@@ -49,7 +49,7 @@ func Start(global *system.Node) {
 
 		for _, iface := range ifaces {
 			if _, ok := workerMap[iface.Name]; !ok {
-				logging.Infof("Found new WG interface: %s\n", iface.Name)
+				logging.Infof("Found new WG interface: %s", iface.Name)
 				worker := &Worker{
 					iface:      iface,
 					stopCh:     make(chan struct{}),

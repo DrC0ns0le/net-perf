@@ -36,13 +36,13 @@ func Query(ctx context.Context, query string) (*QueryPathResponse, error) {
 
 	req, err := http.NewRequest("GET", fullURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error making the request: %v", err)
+		return nil, fmt.Errorf("error making the request: %w", err)
 	}
 	req = req.WithContext(ctx)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error making the request: %v", err)
+		return nil, fmt.Errorf("error making the request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -52,14 +52,14 @@ func Query(ctx context.Context, query string) (*QueryPathResponse, error) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading the response: %v", err)
+		return nil, fmt.Errorf("error reading the response: %w", err)
 	}
 
 	var response QueryPathResponse
 
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing JSON: %v", err)
+		return nil, fmt.Errorf("error parsing JSON: %w", err)
 	}
 
 	if response.Status != "success" {

@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
+	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
@@ -155,9 +156,8 @@ func ListManagedRoutes() ([]netlink.Route, error) {
 	return routes, nil
 }
 
-// GetRoute returns a specific route matching the destination and source IP.
-// Returns nil and no error if no matching route is found.
-func GetRoute(dst *net.IPNet, src net.IP) (*netlink.Route, error) {
+// GetRoute returns a specific route matching the destination and optionally the gateway and/or source IP.
+func GetRoute(dst *net.IPNet, gw, src net.IP) (*netlink.Route, error) {
 	if dst == nil {
 		return nil, fmt.Errorf("network cannot be nil")
 	}
@@ -169,17 +169,23 @@ func GetRoute(dst *net.IPNet, src net.IP) (*netlink.Route, error) {
 
 	for _, r := range routes {
 		if r.Protocol == CustomRouteProtocol {
-			if src != nil {
-				if r.Src != nil && r.Src.Equal(src) {
-					return &r, nil
-				}
-			} else {
+			// If neither gw nor src specified, return first matching route
+			if gw == nil && src == nil {
+				return &r, nil
+			}
+
+			// Check gateway match if specified
+			gwMatch := gw == nil || (r.Gw != nil && r.Gw.Equal(gw))
+			// Check source match if specified
+			srcMatch := src == nil || (r.Src != nil && r.Src.Equal(src))
+
+			// Return route if both specified conditions match
+			if gwMatch && srcMatch {
 				return &r, nil
 			}
 		}
 	}
-
-	return nil, nil
+	return nil, errors.New("no matching route found")
 }
 
 // RemoveAllManagedRoutes deletes all routes managed by this package

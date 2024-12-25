@@ -3,6 +3,8 @@ module github.com/DrC0ns0le/net-perf
 go 1.22.3
 
 require (
+	github.com/cespare/xxhash v1.1.0
+	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/vishvananda/netlink v1.3.0
 	google.golang.org/grpc v1.69.2

@@ -26,7 +26,7 @@ func Serve() {
 	s := grpc.NewServer()
 	pb.RegisterManagementServer(s, &managementServer{})
 
-	logging.Infof("management gRPC server listening at %v", listener.Addr())
+	logging.Infof("Management gRPC server listening at %v", listener.Addr())
 	if err := s.Serve(listener); err != nil {
 		logging.Errorf("failed to serve management gRPC server: %v", err)
 	}
