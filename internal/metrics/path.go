@@ -35,7 +35,7 @@ func GetPreferredPath(ctx context.Context, origin, remote int) (string, float64,
 	}
 
 	if bestVersion == "" {
-		return "", 0, errors.New("no valid paths available")
+		return "", 0, ErrNoPaths
 	}
 
 	return bestVersion, bestCost, nil
@@ -83,19 +83,19 @@ func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMe
 			case 0:
 				latency, err := strconv.ParseFloat(result.Value[1].(string), 64)
 				if err != nil {
-					return nil, fmt.Errorf("error parsing latency: %v", err)
+					return nil, fmt.Errorf("error parsing latency: %w", err)
 				}
 				metrics[result.Metric.Version].Latency = latency
 			case 1:
 				loss, err := strconv.ParseFloat(result.Value[1].(string), 64)
 				if err != nil {
-					return nil, fmt.Errorf("error parsing packet loss: %v", err)
+					return nil, fmt.Errorf("error parsing packet loss: %w", err)
 				}
 				metrics[result.Metric.Version].PacketLoss = loss
 			case 2:
 				availability, err := strconv.ParseFloat(result.Value[1].(string), 64)
 				if err != nil {
-					return nil, fmt.Errorf("error parsing availability: %v", err)
+					return nil, fmt.Errorf("error parsing availability: %w", err)
 				}
 				metrics[result.Metric.Version].Availability = availability
 			}

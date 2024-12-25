@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
 type Worker struct {
@@ -31,7 +32,7 @@ func Start() {
 	manageWorkers := func() {
 		ifaces, err := netctl.GetAllWGInterfaces()
 		if err != nil {
-			log.Printf("Error getting interfaces: %v\n", err)
+			logging.Errorf("Error getting interfaces: %v\n", err)
 		}
 
 		for i, w := range workerMap {
@@ -43,7 +44,7 @@ func Start() {
 				}
 			}
 			if !found {
-				log.Printf("Interface %s no longer exists, stopping worker\n", i)
+				logging.Infof("Interface %s no longer exists, stopping worker\n", i)
 				close(w.stopCh)
 				delete(workerMap, i)
 			}
@@ -79,7 +80,7 @@ func Start() {
 }
 
 func Stop() {
-	log.Println("Stopping measurement workers...")
+	logging.Info("Stopping measurement workers...")
 	for _, w := range workerMap {
 		close(w.stopCh)
 	}

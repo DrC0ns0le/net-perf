@@ -32,7 +32,7 @@ func MeasureUDP(ctx context.Context, sourceIP, serverAddr string) (Result, error
 		LocalAddr: &net.UDPAddr{IP: net.ParseIP(sourceIP)},
 	}
 
-	conn, err := dialer.Dial("udp4", net.JoinHostPort(serverAddr, strconv.Itoa(defaultPort)))
+	conn, err := dialer.Dial("udp4", net.JoinHostPort(serverAddr, strconv.Itoa(*bandwidthPort)))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -61,12 +61,12 @@ func newClient(conn net.Conn) *Client {
 
 		result: Result{
 			Protocol:        "udp",
-			TargetBandwidth: bandwidth,
-			PacketSize:      packetSize,
-			TargetDuration:  int(duration.Seconds()),
+			TargetBandwidth: *bandwidthBandwidth,
+			PacketSize:      *bandwidthPacketSize,
+			TargetDuration:  int(bandwidthDuration.Seconds()),
 		},
 
-		packetsCount: (uint32(bandwidth) * 1000000 * uint32(duration.Seconds())) / (uint32(packetSize) * 8),
+		packetsCount: (uint32(*bandwidthBandwidth) * 1000000 * uint32(bandwidthDuration.Seconds())) / (uint32(*bandwidthPacketSize) * 8),
 	}
 
 	// goroutine to receive statistics
@@ -76,7 +76,7 @@ func newClient(conn net.Conn) *Client {
 }
 
 func (c *Client) runTest(conn net.Conn) (Result, error) {
-	interval := duration / time.Duration(c.packetsCount)
+	interval := *bandwidthDuration / time.Duration(c.packetsCount)
 	var seqNumber uint32
 	startTime := time.Now()
 
@@ -87,11 +87,11 @@ func (c *Client) runTest(conn net.Conn) (Result, error) {
 			SequenceNumber: seqNumber,
 			Timestamp:      time.Now().UnixNano(),
 		}
-		buffer := make([]byte, packetSize)
+		buffer := make([]byte, *bandwidthPacketSize)
 		binary.BigEndian.PutUint32(buffer[:4], packet.SequenceNumber)
 		binary.BigEndian.PutUint64(buffer[4:12], uint64(packet.Timestamp))
 		// fill with random data
-		for i := 12; i < packetSize; i++ {
+		for i := 12; i < *bandwidthPacketSize; i++ {
 			buffer[i] = byte(seqNumber)
 		}
 
@@ -152,11 +152,11 @@ func (c *Client) sendEndOfTest(conn net.Conn, seqNumber uint32) error {
 		// Timestamp:      int64(binary.BigEndian.Uint64(padToEight("TESTEND"))),
 		Timestamp: 101,
 	}
-	buffer := make([]byte, packetSize) // Use the same packet size as in the test
+	buffer := make([]byte, *bandwidthPacketSize) // Use the same packet size as in the test
 	binary.BigEndian.PutUint32(buffer[:4], endPacket.SequenceNumber)
 	binary.BigEndian.PutUint64(buffer[4:12], uint64(endPacket.Timestamp))
 
-	for retry := 0; retry < maxRetries; retry++ {
+	for retry := 0; retry < *bandwidthMaxRetries; retry++ {
 		_, err := conn.Write(buffer)
 		if err != nil {
 			log.Printf("Error sending end packet to %s (attempt %d): %v", conn.RemoteAddr().String(), retry+1, err)
@@ -169,12 +169,12 @@ func (c *Client) sendEndOfTest(conn net.Conn, seqNumber uint32) error {
 		case <-c.ackChan:
 			// log.Println("Received acknowledgment from server")
 			return nil
-		case <-time.After(retryDelay):
+		case <-time.After(*bandwidthRetryDelay):
 			log.Printf("No acknowledgment received from %s (attempt %d), retrying...", conn.RemoteAddr().String(), retry+1)
 		}
 	}
 
-	return fmt.Errorf("failed to receive acknowledgment from %s after %d attempts", conn.RemoteAddr().String(), maxRetries)
+	return fmt.Errorf("failed to receive acknowledgment from %s after %d attempts", conn.RemoteAddr().String(), *bandwidthMaxRetries)
 }
 
 func (c *Client) receiveMessage() {
@@ -245,7 +245,7 @@ func (c *Client) parseStats(statString string) error {
 			if err != nil {
 				return fmt.Errorf("error parsing duration: %v", err)
 			}
-			c.result.Bandwidth = (packetSize * 8 * totalPacketsReceived) / (testDuration / 1000000)
+			c.result.Bandwidth = (*bandwidthPacketSize * 8 * totalPacketsReceived) / (testDuration / 1000000)
 		} else {
 			c.result.Status = 0
 		}

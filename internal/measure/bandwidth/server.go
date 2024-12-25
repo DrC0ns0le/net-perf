@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
 type Server struct {
@@ -37,7 +38,7 @@ func Serve() {
 
 	for _, addr := range localAddrs {
 		runningServers = append(runningServers, &Server{
-			localAddr: addr + ":" + strconv.Itoa(defaultPort),
+			localAddr: addr + ":" + strconv.Itoa(*bandwidthPort),
 			stopCh:    make(chan struct{}),
 			clients:   make(map[string]chan Packet),
 		})
@@ -60,12 +61,12 @@ func (s *Server) Run() {
 	}
 	defer s.conn.Close()
 
-	log.Printf("Bandwidth server listening on %s", s.conn.LocalAddr().String())
+	logging.Infof("Bandwidth server listening on %s", s.conn.LocalAddr().String())
 	s.processPacket()
 }
 
 func (s *Server) processPacket() {
-	buffer := make([]byte, bufferSize)
+	buffer := make([]byte, *bandwidthBufferSize)
 	for {
 		select {
 		case <-s.stopCh:
@@ -86,7 +87,7 @@ func (s *Server) processPacket() {
 			s.mu.Lock()
 			receiveChan, exists := s.clients[remoteAddr.String()]
 			if !exists {
-				receiveChan = make(chan Packet, channelBufferSize)
+				receiveChan = make(chan Packet, *bandwidthChannelBufferSize)
 				s.clients[remoteAddr.String()] = receiveChan
 				go s.clientWorker(receiveChan)
 			}
@@ -98,7 +99,7 @@ func (s *Server) processPacket() {
 
 			receiveChan <- packet
 
-			if len(receiveChan) > channelBufferSize/2 {
+			if len(receiveChan) > *bandwidthChannelBufferSize/2 {
 				log.Printf("Warning: channel buffer is more than half full")
 			}
 
@@ -109,9 +110,9 @@ func (s *Server) processPacket() {
 func (s *Server) clientWorker(receiveChan chan Packet) {
 	stats := &ClientStats{}
 
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(*bandwidthStatsInterval)
 	defer ticker.Stop()
-	timeoutTicker := time.NewTicker(3 * time.Second)
+	timeoutTicker := time.NewTicker(*bandwidthTimeout)
 	defer timeoutTicker.Stop()
 	for {
 		select {
@@ -134,7 +135,7 @@ func (s *Server) clientWorker(receiveChan chan Packet) {
 				if packet.SequenceNumber > stats.HighestSeq {
 					stats.HighestSeq = packet.SequenceNumber
 				} else {
-					if stats.HighestSeq-packet.SequenceNumber < uint32(outOfOrderThreshold) {
+					if stats.HighestSeq-packet.SequenceNumber < uint32(*bandwidthOutOfOrder) {
 						stats.OutOfOrderPackets++
 					} else {
 						stats.DroppedPackets++

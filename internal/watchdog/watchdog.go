@@ -1,125 +1,91 @@
 package watchdog
 
 import (
-	"context"
+	"flag"
+	"fmt"
 	"log"
-	"os/exec"
 	"strconv"
 	"time"
 
-	"github.com/DrC0ns0le/net-perf/internal/metrics"
+	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/internal/system/tunables"
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
-var (
-	localID     string
-	justStarted = true
-)
-
-func Start() {
-	id, err := netctl.GetLocalID()
-	if err != nil {
-		panic(err)
-	}
-
-	localID = id
-	startWorker()
+type watchdog struct {
+	localID int
 }
 
-func startWorker() {
-	log.Println("starting worker")
-	mustUpdateRoutes()
-	justStarted = false
-	ticker := time.NewTicker(5 * time.Second)
+var (
+	wgInterfaceUpdateInterval = flag.Duration("wg.updateinterval", 60*time.Second, "interval for wg interface updates")
+)
+
+func Start(global *system.Node) {
+
+	w := &watchdog{
+		localID: global.SiteID,
+	}
+
+	logging.Infof("starting watchdog service")
+
+	err := Serve(global)
+	if err != nil {
+		logging.Errorf("failed to start watchdog socket: %v", err)
+	}
+
+	err = updateRoutes(true, global.SiteID)
+	if err != nil {
+		log.Fatalf("failed to update routes: %v", err)
+	}
+
+	var iface netctl.WGInterface
+
+	ticker := time.NewTicker(*wgInterfaceUpdateInterval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			go mustUpdateRoutes()
+			go func() {
+				err := updateRoutes(false, global.SiteID)
+				if err != nil {
+					logging.Errorf("failed to update routes: %v", err)
+				}
+			}()
+		case iface = <-global.WGChangeCh:
+			go func() {
+				err := w.handleNewInterface(iface.Name)
+				if err != nil {
+					logging.Errorf("failed to handle new interface: %v", err)
+				}
+			}()
+
+		case <-global.GlobalStopCh:
+			return
 		}
 	}
 }
 
-func mustUpdateRoutes() {
+func (w *watchdog) handleNewInterface(iface string) error {
 
-	ifaces, err := netctl.GetAllWGInterfaces()
+	err := tunables.ConfigureInterface(iface)
 	if err != nil {
-		log.Panicf("failed to get interfaces: %v", err)
+		logging.Errorf("Error configuring sysctls for %s: %v\n", iface, err)
 	}
 
-	var remoteVersionMap = map[string][]string{}
-
-	for _, iface := range ifaces {
-		remoteVersionMap[iface.RemoteID] = append(remoteVersionMap[iface.RemoteID], iface.IPVersion)
-	}
-
-	lID, err := strconv.Atoi(localID)
+	wgIface, err := netctl.ParseWGInterface(iface)
 	if err != nil {
-		log.Printf("failed to convert local ID to int: %v", err)
+		return err
 	}
 
-	for remote, versions := range remoteVersionMap {
-		var version string
-		if len(versions) > 1 {
-
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-
-			rID, err := strconv.Atoi(remote)
-			if err != nil {
-				log.Printf("failed to convert remote ID to int: %v", err)
-			}
-
-			version, _, err = metrics.GetPreferredPath(ctx, lID, rID)
-			if err != nil {
-				log.Printf("failed to determine preferred version: %v", err)
-			}
-
-			if justStarted {
-				version = "4"
-			} else if version == "" {
-				// log.Printf("neither v4 nor v6 are preferred for %s, skipping", remote)
-				continue
-			}
-		} else {
-			version = versions[0]
-		}
-
-		preferredInterface := "wg" + localID + "." + remote + "_v" + version
-
-		// check which interface is being used
-		iface := netctl.GetOutgoingWGInterface(remote)
-
-		if iface == "" {
-			log.Printf("route for %s not found in the routing table, adding route via %s", remote, preferredInterface)
-			// run "ip route add 10.201.{remote}.0/24 dev preferredInterface scope link src 10.201.{local}.1"
-			err := exec.Command("ip", "route", "add", "10.201."+remote+".0/24", "dev", preferredInterface, "scope", "link", "src", "10.201."+localID+".1").Run()
-			if err != nil {
-				log.Printf("Error executing command: %v\n", err)
-			}
-			// run "ip -6 route add fdac:c9:{remote}::/64 dev preferredInterface scope link"
-			err = exec.Command("ip", "-6", "route", "add", "fdac:c9:"+remote+"::/64", "dev", preferredInterface, "scope", "link").Run()
-			if err != nil {
-				log.Printf("Error executing command: %v\n", err)
-			}
-			err = tunables.ConfigureInterface(preferredInterface)
-			if err != nil {
-				log.Printf("Error configuring sysctls for %s: %v\n", preferredInterface, err)
-			}
-		} else if iface != preferredInterface {
-			// run "ip route change 10.201.{remote}.0/24 dev preferredInterface scope link"
-			log.Printf("changing route for %s from %s to %s", remote, iface, preferredInterface)
-			err := exec.Command("ip", "route", "change", "10.201."+remote+".0/24", "dev", preferredInterface, "scope", "link", "src", "10.201."+localID+".1").Run()
-			if err != nil {
-				log.Printf("Error executing command: %v\n", err)
-			}
-			// run "ip -6 route change fdac:c9:{remote}::/64 dev preferredInterface scope link"
-			err = exec.Command("ip", "-6", "route", "change", "fdac:c9:"+remote+"::/64", "dev", preferredInterface, "scope", "link").Run()
-			if err != nil {
-				log.Printf("Error executing command: %v\n", err)
-			}
-		} else {
-			// log.Printf("route for %s already set to preferred interface %s", remote, iface)
-		}
+	remoteID, err := strconv.Atoi(wgIface.RemoteID)
+	if err != nil {
+		return fmt.Errorf("failed to convert remote ID to int: %w", err)
 	}
+
+	err = addLinkRoute(w.localID, remoteID)
+	if err != nil {
+		return err
+	}
+	return nil
 }

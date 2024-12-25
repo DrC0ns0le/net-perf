@@ -2,62 +2,66 @@ package main
 
 import (
 	"flag"
+	"log"
+	"os"
+	"os/signal"
 	"strconv"
-	"time"
+	"syscall"
 
 	"github.com/DrC0ns0le/net-perf/internal/management"
 	"github.com/DrC0ns0le/net-perf/internal/measure"
 	"github.com/DrC0ns0le/net-perf/internal/measure/bandwidth"
 	"github.com/DrC0ns0le/net-perf/internal/metrics"
+	"github.com/DrC0ns0le/net-perf/internal/system"
+	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/internal/watchdog"
 
 	_ "github.com/DrC0ns0le/net-perf/internal/system"
 )
 
 var (
-	managementRPCPort = flag.Int("management.rpcport", 5122, "port for management rpc server")
-	bandwidthPort     = flag.Int("bandwidth.port", 5121, "port for bandwidth measurement server")
-	metricsPort       = flag.Int("metrics.port", 5120, "port for metrics server")
+	wgUpdateCh = flag.Int("wg.updatech", 10, "channel size for wg interface updates")
+	rtUpdateCh = flag.Int("rt.updatech", 10, "channel size for route table updates")
 
-	metricsPath = flag.String("metrics.path", "/metrics", "path for metrics server")
-
-	bandwidthDuration   = flag.Duration("bandwidth.duration", 5*time.Second, "duration for bandwidth measurement")
-	bandwidthBandwidth  = flag.Int("bandwidth.bandwidth", 1, "bandwidth in mbps")
-	bandwidthPacketSize = flag.Int("bandwidth.packetsize", 500, "packet size in bytes")
-	bandwidthBufferSize = flag.Int("bandwidth.buffer", 1500, "buffer size in bytes")
-	bandwidthMaxRetries = flag.Int("bandwidth.maxretries", 3, "max number of retries")
-	bandwidthRetryDelay = flag.Duration("bandwidth.retrydelay", 1*time.Second, "delay between retries")
-	bandwidthTimeout    = flag.Duration("bandwidth.timeout", 10*time.Second, "timeout for bandwidth measurement")
-	bandwidthOutOfOrder = flag.Int("bandwidth.outoforder", 0, "threshold for out-of-order packets")
+	err error
 )
 
 func main() {
 	flag.Parse()
 
-	bandwidth.Init(&bandwidth.Config{
-		Port:                5121,
-		BufferSize:          *bandwidthBufferSize,
-		Bandwidth:           *bandwidthBandwidth,
-		PacketSize:          *bandwidthPacketSize,
-		Duration:            *bandwidthDuration,
-		MaxRetries:          *bandwidthMaxRetries,
-		RetryDelay:          *bandwidthRetryDelay,
-		OutOfOrderThreshold: *bandwidthOutOfOrder,
-	})
+	node := &system.Node{
+		GlobalStopCh: make(chan struct{}),
+		WGChangeCh:   make(chan netctl.WGInterface, *wgUpdateCh),
+		RTChangeCh:   make(chan struct{}, *rtUpdateCh),
+	}
+
+	siteID, err := netctl.GetLocalID()
+	if err != nil {
+		log.Fatalf("failed to get local id: %v", err)
+	}
+
+	node.SiteID, err = strconv.Atoi(siteID)
+	if err != nil {
+		log.Fatalf("failed to convert local id to int: %v", err)
+	}
+
+	// start watchdog
+	go watchdog.Start(node)
+
+	// start metrics server
+	go metrics.Serve()
 
 	// start bandwidth measurement server
 	go bandwidth.Serve()
 
 	// start measurement workers for bandwidth & latency
 	go measure.Start()
-	defer measure.Stop()
-
-	// start link switch
-	go watchdog.Start()
 
 	// start management rpc server
-	go management.MustServe(*managementRPCPort)
+	go management.Serve()
 
-	// start metrics server
-	metrics.Serve(strconv.Itoa(*metricsPort))
+	// wait for termination signal
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
 }

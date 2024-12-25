@@ -1,8 +1,27 @@
 package bandwidth
 
 import (
+	"flag"
 	"net"
 	"time"
+
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
+)
+
+var (
+	bandwidthPort              = flag.Int("bandwidth.port", 5121, "port for bandwidth measurement server")
+	bandwidthDuration          = flag.Duration("bandwidth.duration", 5*time.Second, "duration for bandwidth measurement")
+	bandwidthBandwidth         = flag.Int("bandwidth.bandwidth", 1, "bandwidth in mbps")
+	bandwidthPacketSize        = flag.Int("bandwidth.packetsize", 500, "packet size in bytes")
+	bandwidthBufferSize        = flag.Int("bandwidth.buffer", 1500, "buffer size in bytes")
+	bandwidthMaxRetries        = flag.Int("bandwidth.maxretries", 3, "max number of retries")
+	bandwidthRetryDelay        = flag.Duration("bandwidth.retrydelay", 1*time.Second, "delay between retries")
+	bandwidthTimeout           = flag.Duration("bandwidth.timeout", 10*time.Second, "timeout for bandwidth measurement")
+	bandwidthStatsInterval     = flag.Duration("bandwidth.statsinterval", 2*time.Second, "interval for sending bandwidth measurement stats")
+	bandwidthChannelBufferSize = flag.Int("bandwidth.channelbuffer", 25, "buffered packets in server receive channel")
+
+	// server side
+	bandwidthOutOfOrder = flag.Int("bandwidth.outoforder", 0, "threshold for out-of-order packets")
 )
 
 type Packet struct {
@@ -68,94 +87,11 @@ type Result struct {
 	PacketSize int
 }
 
-type Config struct {
-	// Port is the UDP port that the server will listen on
-	Port int
-	// Duration is the maximum total test duration
-	Duration time.Duration
-	// BufferSize is the size of the UDP packet buffer in bytes
-	BufferSize int
-	// Bandwidth is the bandwidth in Mbits/sec
-	Bandwidth int
-	// PacketSize is the size of the UDP packet in bytes
-	PacketSize int
-	// MaxRetries is the maximum number of times to retry sending a packet
-	MaxRetries int
-	// RetryDelay is the delay between retries
-	RetryDelay time.Duration
-	// Out of order threshold
-	OutOfOrderThreshold int
-}
-
-var (
-	defaultPort int
-	duration    time.Duration
-	bufferSize  int
-	bandwidth   int
-	packetSize  int
-	maxRetries  int
-	retryDelay  time.Duration
-
-	// server side
-	outOfOrderThreshold int
-	channelBufferSize   int
-)
-
-func Init(config *Config) {
-	if config.Port == 0 {
-		defaultPort = 5210
-	} else {
-		defaultPort = config.Port
+func init() {
+	if *bandwidthBufferSize < *bandwidthPacketSize+12 {
+		*bandwidthBufferSize = *bandwidthPacketSize + 12
+		logging.Infof("Configured buffer size too small, using %d bytes", *bandwidthBufferSize)
 	}
-
-	if config.Duration == 0 {
-		duration = 5 * time.Second
-	} else {
-		duration = config.Duration
-	}
-
-	if config.Bandwidth == 0 {
-		bandwidth = 1
-	} else {
-		bandwidth = config.Bandwidth
-	}
-
-	if config.PacketSize == 0 {
-		packetSize = 1500
-	} else {
-		packetSize = config.PacketSize
-	}
-
-	if config.BufferSize == 0 {
-		bufferSize = packetSize + 12
-	} else {
-		bufferSize = config.BufferSize
-	}
-
-	if config.MaxRetries == 0 {
-		maxRetries = 5
-	} else {
-		maxRetries = config.MaxRetries
-	}
-
-	if config.RetryDelay == 0 {
-		retryDelay = 1 * time.Second
-	} else {
-		retryDelay = config.RetryDelay
-	}
-
-	if config.OutOfOrderThreshold == 0 {
-		outOfOrderThreshold = 50
-	} else {
-		outOfOrderThreshold = config.OutOfOrderThreshold
-	}
-
-	if config.BufferSize == 0 {
-		channelBufferSize = 50
-	} else {
-		channelBufferSize = config.BufferSize
-	}
-
 }
 
 // func padToEight(s string) []byte {
