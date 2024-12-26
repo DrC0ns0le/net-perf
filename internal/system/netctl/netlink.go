@@ -5,7 +5,6 @@ import (
 	"net"
 
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
-	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
@@ -185,7 +184,7 @@ func GetRoute(dst *net.IPNet, gw, src net.IP) (*netlink.Route, error) {
 			}
 		}
 	}
-	return nil, errors.New("no matching route found")
+	return nil, ErrRouteNotFound
 }
 
 // RemoveAllManagedRoutes deletes all routes managed by this package

@@ -5,12 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"math"
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/measure/latency"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -44,7 +44,7 @@ func startLatencyWorker(worker *Worker) {
 	randSleep := time.Duration(float64(5*time.Second) * (float64(h) / (1 << 64)))
 	time.Sleep(randSleep)
 
-	// log.Printf("Starting latency measurement on %s\n", worker.iface.Name)
+	logging.Debugf("Starting latency measurement on %s\n", worker.iface.Name)
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -57,7 +57,7 @@ func startLatencyWorker(worker *Worker) {
 				// measure
 				data, err := latency.MeasureTCP(ctx, worker.sourceIP, worker.targetIP, worker.targetPort)
 				if err != nil {
-					log.Println("%s: error measuring TCP latency:", worker.iface.Name, err)
+					logging.Errorf("%s: error measuring TCP latency: %v", worker.iface.Name, err)
 				}
 
 				// generate metrics
@@ -67,7 +67,7 @@ func startLatencyWorker(worker *Worker) {
 			go func() {
 				data, err := latency.MeasureICMP(ctx, worker.sourceIP, worker.targetIP)
 				if err != nil {
-					log.Println("Error measuring ICMP latency:", err)
+					logging.Errorf("%s: error measuring ICMP latency: %v", worker.iface.Name, err)
 				}
 
 				// generate metrics
@@ -76,7 +76,7 @@ func startLatencyWorker(worker *Worker) {
 			}()
 
 		case <-worker.stopCh:
-			log.Printf("Stopping latency measurement on %s\n", worker.iface.Name)
+			logging.Infof("Stopping latency measurement on %s", worker.iface.Name)
 
 			// Set metrics to NaN
 			generateLatencyMetrics(latency.Result{

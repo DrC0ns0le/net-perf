@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"math"
 	"net"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
 type Client struct {
@@ -34,13 +35,13 @@ func MeasureUDP(ctx context.Context, sourceIP, serverAddr string) (Result, error
 
 	conn, err := dialer.Dial("udp4", net.JoinHostPort(serverAddr, strconv.Itoa(*bandwidthPort)))
 	if err != nil {
-		log.Fatal(err)
+		return Result{}, err
 	}
 	defer conn.Close()
 
 	client := newClient(conn)
 
-	// log.Printf("Connected to server %s at %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
+	logging.Debugf("Connected to server %s at %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 
 	result, err := client.runTest(conn)
 	if err != nil {
@@ -97,7 +98,7 @@ func (c *Client) runTest(conn net.Conn) (Result, error) {
 
 		_, err := conn.Write(buffer)
 		if err != nil {
-			log.Printf("Error sending packet to %s: %v", conn.RemoteAddr().String(), err)
+			logging.Errorf("Error sending packet to %s: %v", conn.RemoteAddr().String(), err)
 		}
 
 		select {
@@ -116,7 +117,7 @@ func (c *Client) runTest(conn net.Conn) (Result, error) {
 
 	c.result.Duration = time.Since(startTime).Seconds()
 
-	// log.Printf("Test completed, client took %v seconds. Sent %d packets", c.result.Duration, seqNumber)
+	logging.Debugf("Test completed, client took %v seconds. Sent %d packets", c.result.Duration, seqNumber)
 
 	// Send end of test notification
 	if err := c.sendEndOfTest(conn, seqNumber); err != nil {
@@ -130,18 +131,19 @@ func (c *Client) runTest(conn net.Conn) (Result, error) {
 		if err != nil {
 			return c.result, fmt.Errorf("error parsing final stats from %s: %v", conn.RemoteAddr().String(), err)
 		}
-		// log.Printf("Final stats from server: %+v", c.result)
+		logging.Debugf("Final stats from server: %+v", c.result)
 	case err := <-c.errorChan:
 		return c.result, fmt.Errorf("error receiving final stats from %s: %v", conn.RemoteAddr().String(), err)
 	case <-time.After(10 * time.Second):
 		return c.result, fmt.Errorf("timeout waiting for final stats from %s", conn.RemoteAddr().String())
 	}
 
-	// // Print client-side summary
-	// log.Printf("Client-side summary:")
-	// log.Printf("Total packets sent: %d", seqNumber)
-	// log.Printf("Test duration: %v", time.Since(startTime))
-	// log.Printf("Target bandwidth: %d Mbps", bandwidth)
+	// Print client-side summary
+	logging.Debugf("Client-side summary:")
+	logging.Debugf("Total packets sent: %d", seqNumber)
+	logging.Debugf("Test duration: %v", time.Since(startTime))
+	logging.Debugf("Target bandwidth: %d Mbps", c.result.TargetBandwidth)
+	logging.Debugf("Actual bandwidth: %d Mbps", c.result.Bandwidth)
 
 	return c.result, nil
 }
@@ -159,9 +161,9 @@ func (c *Client) sendEndOfTest(conn net.Conn, seqNumber uint32) error {
 	for retry := 0; retry < *bandwidthMaxRetries; retry++ {
 		_, err := conn.Write(buffer)
 		if err != nil {
-			log.Printf("Error sending end packet to %s (attempt %d): %v", conn.RemoteAddr().String(), retry+1, err)
-			// } else {
-			// log.Printf("Sent end of test notification (attempt %d)", retry+1)
+			logging.Errorf("Error sending end packet to %s (attempt %d): %v", conn.RemoteAddr().String(), retry+1, err)
+		} else {
+			logging.Debugf("Sent end of test notification (attempt %d)", retry+1)
 		}
 
 		// Wait for acknowledgment
@@ -170,7 +172,7 @@ func (c *Client) sendEndOfTest(conn net.Conn, seqNumber uint32) error {
 			// log.Println("Received acknowledgment from server")
 			return nil
 		case <-time.After(*bandwidthRetryDelay):
-			log.Printf("No acknowledgment received from %s (attempt %d), retrying...", conn.RemoteAddr().String(), retry+1)
+			logging.Errorf("No acknowledgment received from %s (attempt %d), retrying...", conn.RemoteAddr().String(), retry+1)
 		}
 	}
 
@@ -192,9 +194,9 @@ func (c *Client) receiveMessage() {
 		case "STATS":
 			err := c.parseStats(string(buffer[:n]))
 			if err != nil {
-				log.Println("Error parsing stats:", err)
-				// } else {
-				// 	log.Printf("Received %s interim stats: %+v", c.conn.RemoteAddr(), c.result)
+				logging.Errorf("Error parsing stats: %v", err)
+			} else {
+				logging.Debugf("Received %s interim stats: %+v", c.conn.RemoteAddr(), c.result)
 			}
 		case "FINAL":
 			c.statsChan <- string(buffer[:n])

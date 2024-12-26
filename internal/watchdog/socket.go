@@ -82,6 +82,7 @@ func HandleConnection(conn net.Conn, WGUpdateCh chan netctl.WGInterface) {
 			select {
 			case WGUpdateCh <- wgIface:
 				conn.Write([]byte("OK\n"))
+				logging.Infof("Got messsage of new interface: %s", wgIface.Name)
 			case <-time.After(*SocketConnectionTimeout):
 				conn.Write([]byte("ERROR: timeout writing to channel\n"))
 			}

@@ -1,6 +1,7 @@
 package route
 
 import (
+	"hash"
 	"log"
 
 	"github.com/DrC0ns0le/net-perf/internal/route/bird"
@@ -25,7 +26,7 @@ func Start(global *system.Node) {
 		GlobalStopCh: global.GlobalStopCh,
 		RTUpdateCh:   global.RTUpdateCh,
 		RouteTable: &RouteTable{
-			Routes: []Route{},
+			Routes: make([]Route, 0),
 		},
 	}
 	go bird.Watcher()
@@ -33,6 +34,7 @@ func Start(global *system.Node) {
 	// start route alignment
 	Aligner := &Aligner{
 		RouteTable: bird.RouteTable,
+		RTCache:    make(map[string]hash.Hash64),
 		RTUpdateCh: global.RTUpdateCh,
 	}
 	go Aligner.Start()

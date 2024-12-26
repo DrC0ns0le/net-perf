@@ -1,10 +1,12 @@
 package route
 
 import (
-	"errors"
 	"flag"
+	"fmt"
+	"hash"
 	"time"
 
+	"github.com/DrC0ns0le/net-perf/internal/route/bird"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
@@ -15,13 +17,15 @@ var (
 
 type Aligner struct {
 	RouteTable *RouteTable
+	RTCache    map[string]hash.Hash64
 
+	needUpdate bool
 	RTUpdateCh chan struct{}
 }
 
 func (a *Aligner) Start() {
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	logging.Infof("Starting route alignment service")
 
@@ -29,26 +33,55 @@ func (a *Aligner) Start() {
 	defer ticker.Stop()
 	for {
 		<-ticker.C
-		a.check()
+		a.RouteTable.updateMu.Lock()
+		a.checkSystemRTAlignment()
+		a.checkBirdChanges()
+
+		if a.needUpdate {
+			a.needUpdate = false
+			a.RTUpdateCh <- struct{}{}
+		}
+
+		a.RouteTable.updateMu.Unlock()
 	}
 }
 
-func (a *Aligner) check() {
-	a.RouteTable.updateMu.Lock()
-	defer a.RouteTable.updateMu.Unlock()
+func (a *Aligner) checkSystemRTAlignment() {
+	systemRoutes, err := netctl.ListManagedRoutes()
+	if err != nil {
+		logging.Errorf("birdwatcher: Failed to list managed routes: %v", err)
+		return
+	}
 
-	var needUpdate bool
+	managedRoutes := make(map[string]struct{})
+	for _, route := range systemRoutes {
+		key := fmt.Sprintf("%s_%v", route.Dst.String(), route.Gw)
+		managedRoutes[key] = struct{}{}
+	}
 
 	for _, route := range a.RouteTable.Routes {
-		if _, err := netctl.GetRoute(route.Destination, route.Gateway, nil); err == errors.New("no matching route found") {
-			logging.Errorf("Missing route %s via %s", route.Destination, route.Gateway)
-			needUpdate = true
+		key := fmt.Sprintf("%s_%v", route.Destination.String(), route.Gateway)
+		if _, exists := managedRoutes[key]; !exists {
+			logging.Errorf("birdwatcher: Missing system route %s via %s",
+				route.Destination, route.Gateway)
+			a.needUpdate = true
 		}
 	}
+}
 
-	if needUpdate {
-		logging.Info("Triggering route table update due to missing routes")
-		a.RTUpdateCh <- struct{}{}
+func (a *Aligner) checkBirdChanges() {
+	for _, mode := range []string{"v4", "v6"} {
+		_, hash, err := bird.GetRoutes(mode)
+		if err != nil {
+			logging.Errorf("Error getting routes: %v", err)
+		}
+
+		if _, ok := a.RTCache[mode]; !ok {
+			a.RTCache[mode] = hash
+		} else if a.RTCache[mode] != hash {
+			a.RTCache[mode] = hash
+			logging.Infof("birdwatcher: Bird route table changed for %s", mode)
+			a.needUpdate = true
+		}
 	}
-
 }

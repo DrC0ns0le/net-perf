@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"math"
 	"strconv"
 	"time"
@@ -51,7 +50,7 @@ func startBandwidthWorker(worker *Worker) {
 	randSleep := time.Duration(float64(50*time.Second) * (float64(h) / (1 << 64)))
 	time.Sleep(randSleep)
 
-	// log.Printf("Starting bandwidth measurement on %s\n", worker.iface.Name)
+	logging.Debugf("Starting bandwidth measurement on %s\n", worker.iface.Name)
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -72,7 +71,7 @@ func startBandwidthWorker(worker *Worker) {
 			}()
 
 		case <-worker.stopCh:
-			log.Printf("Stopping bandwidth measurement on %s", worker.iface.Name)
+			logging.Infof("Stopping bandwidth measurement on %s", worker.iface.Name)
 
 			// Set metrics to NaN
 			generateBandwidthMetrics(bandwidth.Result{}, worker.iface)

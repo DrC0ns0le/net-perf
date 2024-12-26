@@ -100,7 +100,7 @@ func (s *Server) processPacket() {
 			receiveChan <- packet
 
 			if len(receiveChan) > *bandwidthChannelBufferSize/2 {
-				log.Printf("Warning: channel buffer is more than half full")
+				logging.Infof("Warning: channel buffer is %.1f%% full", float64(len(receiveChan))/float64(*bandwidthChannelBufferSize)*100)
 			}
 
 		}
@@ -124,7 +124,7 @@ func (s *Server) clientWorker(receiveChan chan Packet) {
 				go s.sendStats(stats)
 			}
 		case <-timeoutTicker.C:
-			log.Printf("Test failed due to %s timeout, received %d packets, dropped %d, out of order %d, average jitter %d, jitter variance %f",
+			logging.Errorf("Test failed due to %s timeout, received %d packets, dropped %d, out of order %d, average jitter %d, jitter variance %f",
 				stats.ClientAddr.String(), stats.TotalPackets, stats.DroppedPackets, stats.OutOfOrderPackets, stats.AverageJitter, stats.JitterVariance)
 			s.mu.Lock()
 			delete(s.clients, stats.ClientAddr.String())
@@ -215,6 +215,6 @@ func (s *Server) sendFinalStats(stats *ClientStats) {
 func (s *Server) sendMessage(addr *net.UDPAddr, message string) {
 	_, err := s.conn.WriteToUDP([]byte(message), addr)
 	if err != nil {
-		log.Printf("Error sending message to %s: %v", addr, err)
+		logging.Errorf("Error sending message to %s: %v", addr, err)
 	}
 }
