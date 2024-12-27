@@ -53,7 +53,7 @@ func (c *pathCostCache) cleanExpired() {
 	}
 }
 
-// GetPathCost returns the cached cost if available, otherwise calculates and caches it
+// GetPathCost returns the cached cost if available, otherwise calculates and caches it, src and dst is AS number
 func GetPathCost(ctx context.Context, src, dst int) float64 {
 	key := generateCacheKey(src, dst)
 

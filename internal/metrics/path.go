@@ -73,7 +73,7 @@ func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMe
 	}
 
 	for i, query := range queries {
-		response, err := Query(ctx, query)
+		response, err := QueryRange(ctx, "now-15m", "now", "15m", query)
 		if err != nil {
 			return metrics, err
 		}
@@ -81,19 +81,19 @@ func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMe
 		for _, result := range response.Data.Result {
 			switch i {
 			case 0:
-				latency, err := strconv.ParseFloat(result.Value[1].(string), 64)
+				latency, err := strconv.ParseFloat(result.Values[0][1].(string), 64)
 				if err != nil {
 					return nil, fmt.Errorf("error parsing latency: %w", err)
 				}
 				metrics[result.Metric.Version].Latency = latency
 			case 1:
-				loss, err := strconv.ParseFloat(result.Value[1].(string), 64)
+				loss, err := strconv.ParseFloat(result.Values[0][1].(string), 64)
 				if err != nil {
 					return nil, fmt.Errorf("error parsing packet loss: %w", err)
 				}
 				metrics[result.Metric.Version].PacketLoss = loss
 			case 2:
-				availability, err := strconv.ParseFloat(result.Value[1].(string), 64)
+				availability, err := strconv.ParseFloat(result.Values[0][1].(string), 64)
 				if err != nil {
 					return nil, fmt.Errorf("error parsing availability: %w", err)
 				}

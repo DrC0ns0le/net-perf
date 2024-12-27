@@ -38,12 +38,12 @@ func (b *Bird) Watcher() {
 	// Initial run
 	err := b.run()
 	if err != nil {
-		logging.Errorf("Error in intial bird route table sync: %v", err)
+		logging.Errorf("Error in initial bird route table sync: %v", err)
 	}
 	netctl.RemoveAllManagedRoutes()
 	err = b.run()
 	if err != nil {
-		logging.Errorf("Error in intial bird route table sync: %v", err)
+		logging.Errorf("Error in initial bird route table sync: %v", err)
 	}
 
 	// Calculate first interval
@@ -53,13 +53,28 @@ func (b *Bird) Watcher() {
 
 	// Wait for the first interval boundary
 	timer := time.NewTimer(firstSleep)
-	<-timer.C
-	if err := b.run(); err != nil {
-		logging.Errorf("Error in bird route table sync: %v", err)
-	}
-	timer.Stop()
 
-	// Create ticker starting from the interval boundary
+	for {
+		select {
+		case <-b.GlobalStopCh:
+			return
+		case <-timer.C:
+			timer.Stop()
+			if err := b.run(); err != nil {
+				logging.Errorf("Error in bird route table sync: %v", err)
+			}
+			goto mainDaemonLoop
+		case <-b.RTUpdateCh:
+			logging.Infof("Triggering route table update")
+			if err := b.run(); err != nil {
+				logging.Errorf("Error in bird route table sync: %v", err)
+			}
+		}
+	}
+
+mainDaemonLoop:
+
+	// Create ticker starting from after we handled the first event
 	ticker := time.NewTicker(*updateInterval)
 	defer ticker.Stop()
 
@@ -74,6 +89,7 @@ func (b *Bird) Watcher() {
 				// Continue running even if there's an error
 			}
 		case <-b.RTUpdateCh:
+			logging.Infof("Triggering route table update")
 			if err := b.run(); err != nil {
 				logging.Errorf("Error in bird route table sync: %v", err)
 			}

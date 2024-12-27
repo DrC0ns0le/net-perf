@@ -4,10 +4,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"sort"
 	"strconv"
+	"time"
 
+	"github.com/DrC0ns0le/net-perf/internal/route/finder"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
 	pb "github.com/DrC0ns0le/net-perf/pkg/pb/management"
@@ -17,9 +20,6 @@ import (
 
 var (
 	managementRPCPort = flag.Int("management.rpcport", 5122, "port for management rpc server")
-
-	// showInfo       = flag.Bool("i", false, "Show all routes info")
-	// showRouteTable = flag.Bool("t", false, "Show managed routes")
 
 	sites = []int{
 		0, 1, 2, 3,
@@ -46,12 +46,6 @@ func main() {
 		}
 		defer conn.Close()
 		nodes[site] = conn
-	}
-
-	// adjacency matrix
-	matrix := make([][]int, len(sites))
-	for i := range matrix {
-		matrix[i] = make([]int, len(sites))
 	}
 
 	for site, conn := range nodes {
@@ -147,6 +141,14 @@ func tracePath(routeMap map[int]map[int]int) {
 	}
 	sort.Ints(sources)
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	graph, err := finder.NewGraph(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Print routing table
 	fmt.Println("\nRouting Table:")
 	fmt.Println("-------------")
@@ -160,7 +162,14 @@ func tracePath(routeMap map[int]map[int]int) {
 		})
 
 		for _, route := range routes {
-			fmt.Printf("  To %d via: %v\n", route.Dest, route.Via)
+			path, _, err := graph.GetShortestPath(source, route.Dest)
+			if err != nil {
+				logging.Errorf("Dijkstra failed to get shortest path for %d -> %d: %v", source, route.Dest, err)
+				continue
+			}
+			fmt.Printf("  To: %d\n", route.Dest)
+			fmt.Printf("    Bird BGP: %v\n", route.Via)
+			fmt.Printf("    Dijkstra: %v\n", path[1:])
 		}
 	}
 

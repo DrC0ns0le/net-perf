@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	SocketPath              = flag.String("socket.path", "/tmp/net-perf.sock", "path for unix socket")
+	SocketPath              = flag.String("socket.path", "/opt/wg-mesh/net-perf.sock", "path for unix socket")
 	SocketConnectionTimeout = flag.Duration("socket.timeout", 5*time.Second, "timeout for socket connection")
 )
 
