@@ -78,10 +78,11 @@ func (a *Aligner) checkBirdChanges() {
 
 		if _, ok := a.RTCache[mode]; !ok {
 			a.RTCache[mode] = hash
-		} else if a.RTCache[mode] != hash {
+		} else if a.RTCache[mode].Sum64() != hash.Sum64() {
 			a.RTCache[mode] = hash
-			logging.Infof("birdwatcher: Bird route table changed for %s", mode)
+			logging.Debugf("birdwatcher: Bird route table changed: %v", hash)
 			a.needUpdate = true
+			return
 		}
 	}
 }
