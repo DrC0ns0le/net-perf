@@ -1,102 +1,42 @@
 package watchdog
 
 import (
-	"flag"
-	"fmt"
-	"log"
-	"strconv"
-	"time"
+	"hash"
 
 	"github.com/DrC0ns0le/net-perf/internal/system"
-	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
-	"github.com/DrC0ns0le/net-perf/internal/system/tunables"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
 type watchdog struct {
-	localID int
+	link  *linkWatchdog
+	route *routeWatchdog
 }
-
-var (
-	wgInterfaceUpdateInterval = flag.Duration("wg.updateinterval", 60*time.Second, "interval for wg interface updates")
-)
 
 func Start(global *system.Node) {
 
 	w := &watchdog{
-		localID: global.SiteID,
+		link: &linkWatchdog{
+			StopCh:          global.GlobalStopCh,
+			WGUpdateCh:      global.WGUpdateCh,
+			RTUpdateCh:      global.RTUpdateCh,
+			MeasureUpdateCh: global.MeasureUpdateCh,
+			localID:         global.SiteID,
+		},
+		route: &routeWatchdog{
+			RouteTable: global.RouteTable,
+			RTCache:    make(map[string]hash.Hash64),
+			RTUpdateCh: global.RTUpdateCh,
+		},
 	}
-
-	logging.Infof("Starting watchdog service")
 
 	err := Serve(global)
 	if err != nil {
 		logging.Errorf("failed to start watchdog socket: %v", err)
 	}
 
-	updated, err := updateRoutes(true, global.SiteID)
-	if err != nil {
-		log.Fatalf("failed to update routes: %v", err)
-	}
+	// link watchdog
+	go w.link.Start()
 
-	if updated {
-		global.RTUpdateCh <- struct{}{}
-	}
-
-	var iface netctl.WGInterface
-
-	ticker := time.NewTicker(*wgInterfaceUpdateInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			go func() {
-				updated, err := updateRoutes(false, global.SiteID)
-				if err != nil {
-					logging.Errorf("failed to update routes: %v", err)
-				}
-
-				if updated {
-					global.RTUpdateCh <- struct{}{}
-				}
-			}()
-		case iface = <-global.WGUpdateCh:
-			go func() {
-				err := w.handleNewInterface(iface.Name)
-				if err != nil {
-					logging.Errorf("failed to handle new interface: %v", err)
-				}
-			}()
-
-			global.MeasureUpdateCh <- struct{}{}
-			global.RTUpdateCh <- struct{}{}
-
-		case <-global.GlobalStopCh:
-			return
-		}
-	}
-}
-
-func (w *watchdog) handleNewInterface(iface string) error {
-
-	err := tunables.ConfigureInterface(iface)
-	if err != nil {
-		logging.Errorf("Error configuring sysctls for %s: %v\n", iface, err)
-	}
-
-	wgIface, err := netctl.ParseWGInterface(iface)
-	if err != nil {
-		return err
-	}
-
-	remoteID, err := strconv.Atoi(wgIface.RemoteID)
-	if err != nil {
-		return fmt.Errorf("failed to convert remote ID to int: %w", err)
-	}
-
-	err = addLinkRoute(w.localID, remoteID)
-	if err != nil {
-		return err
-	}
-	return nil
+	// route watchdog
+	go w.route.Start()
 }

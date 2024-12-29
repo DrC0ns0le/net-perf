@@ -11,6 +11,7 @@ import (
 
 	"github.com/DrC0ns0le/net-perf/internal/route/bird"
 	"github.com/DrC0ns0le/net-perf/internal/route/cost"
+	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
@@ -28,7 +29,7 @@ const (
 
 type Bird struct {
 	Config     *bird.Config
-	RouteTable *RouteTable
+	RouteTable *system.RouteTable
 
 	GlobalStopCh chan struct{}
 	RTUpdateCh   chan struct{}
@@ -45,6 +46,8 @@ func (b *Bird) Watcher() {
 	if err != nil {
 		logging.Errorf("Error in initial bird route table sync: %v", err)
 	}
+
+	b.RouteTable.MarkReady()
 
 	// Calculate first interval
 	now := time.Now()
@@ -101,8 +104,8 @@ func (b *Bird) run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), *costContextTimeout)
 	defer cancel()
 
-	b.RouteTable.updateMu.Lock()
-	defer b.RouteTable.updateMu.Unlock()
+	b.RouteTable.Lock()
+	defer b.RouteTable.Unlock()
 	b.RouteTable.ClearRoutes()
 
 	for _, mode := range []string{"v4", "v6"} {

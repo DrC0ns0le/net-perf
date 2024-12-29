@@ -3,9 +3,9 @@ package watchdog
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"net"
-	"os/exec"
 	"strconv"
 	"time"
 
@@ -16,7 +16,58 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-func updateRoutes(justStarted bool, localID int) (bool, error) {
+type linkWatchdog struct {
+	StopCh          chan struct{}
+	WGUpdateCh      chan netctl.WGInterface
+	RTUpdateCh      chan struct{}
+	MeasureUpdateCh chan struct{}
+
+	started bool
+	localID int
+	// logger  *logging.Logger
+}
+
+var (
+	linkUpdateInterval = flag.Duration("watchdog.link.updateinterval", 60*time.Second, "interval for link interface updates")
+)
+
+func (w *linkWatchdog) Start() {
+	logging.Infof("Starting link watchdog service")
+	ticker := time.NewTicker(*linkUpdateInterval)
+	defer ticker.Stop()
+
+	var iface netctl.WGInterface
+	for {
+		select {
+		case <-ticker.C:
+			go func() {
+				updated, err := w.manageLink()
+				if err != nil {
+					logging.Errorf("failed to update routes: %v", err)
+				}
+
+				if updated {
+					w.RTUpdateCh <- struct{}{}
+				}
+			}()
+		case iface = <-w.WGUpdateCh:
+			go func() {
+				err := w.addLink(iface.Name)
+				if err != nil {
+					logging.Errorf("failed to handle new interface: %v", err)
+				}
+			}()
+
+			w.MeasureUpdateCh <- struct{}{}
+			w.RTUpdateCh <- struct{}{}
+
+		case <-w.StopCh:
+			return
+		}
+	}
+}
+
+func (w *linkWatchdog) manageLink() (bool, error) {
 
 	var updated bool
 
@@ -44,7 +95,7 @@ func updateRoutes(justStarted bool, localID int) (bool, error) {
 				return false, fmt.Errorf("failed to convert remote ID to int: %v", err)
 			}
 
-			version, _, err = metrics.GetPreferredPath(ctx, localID, rID)
+			version, _, err = metrics.GetPreferredPath(ctx, w.localID, rID)
 			if err != nil {
 				var netErr *net.OpError
 				switch {
@@ -60,8 +111,9 @@ func updateRoutes(justStarted bool, localID int) (bool, error) {
 				}
 			}
 
-			if justStarted {
+			if !w.started {
 				version = "4"
+				w.started = true
 			} else if version == "" {
 				logging.Infof("neither v4 nor v6 are preferred for %s, skipping", remote)
 				continue
@@ -70,38 +122,26 @@ func updateRoutes(justStarted bool, localID int) (bool, error) {
 			version = versions[0]
 		}
 
-		preferredInterface := "wg" + strconv.Itoa(localID) + "." + remote + "_v" + version
+		preferredInterface := "wg" + strconv.Itoa(w.localID) + "." + remote + "_v" + version
 
 		// check which interface is being used
 		iface := netctl.GetOutgoingWGInterface(remote)
 
 		if iface == "" {
-			logging.Errorf("Warning:route for %s not found in the routing table, adding route via %s", remote, preferredInterface)
-			// run "ip route add 10.201.{remote}.0/24 dev preferredInterface scope link src 10.201.{local}.1"
-			err := exec.Command("ip", "route", "add", "10.201."+remote+".0/24", "dev", preferredInterface, "scope", "link", "src", "10.201."+strconv.Itoa(localID)+".1").Run()
+			logging.Errorf("warning: route for %s is unexpectedly not found in the routing table, adding route via %s", remote, preferredInterface)
+			err := w.addWGLinkRoutes(preferredInterface)
 			if err != nil {
-				return false, fmt.Errorf("error executing ip add command: %w", err)
-			}
-			// run "ip -6 route add fdac:c9:{remote}::/64 dev preferredInterface scope link"
-			err = exec.Command("ip", "-6", "route", "add", "fdac:c9:"+remote+"::/64", "dev", preferredInterface, "scope", "link").Run()
-			if err != nil {
-				return false, fmt.Errorf("error executing ip -6 add command: %w", err)
+				return false, fmt.Errorf("failed to add route for %s: %v", remote, err)
 			}
 			err = tunables.ConfigureInterface(preferredInterface)
 			if err != nil {
 				logging.Errorf("Error configuring sysctls for %s: %v\n", preferredInterface, err)
 			}
 		} else if iface != preferredInterface {
-			// run "ip route change 10.201.{remote}.0/24 dev preferredInterface scope link"
 			logging.Infof("changing route for %s from %s to %s", remote, iface, preferredInterface)
-			err := exec.Command("ip", "route", "change", "10.201."+remote+".0/24", "dev", preferredInterface, "scope", "link", "src", "10.201."+strconv.Itoa(localID)+".1").Run()
+			err := w.changeWGLinkRoutes(preferredInterface)
 			if err != nil {
-				return false, fmt.Errorf("error executing ip change command: %w", err)
-			}
-			// run "ip -6 route change fdac:c9:{remote}::/64 dev preferredInterface scope link"
-			err = exec.Command("ip", "-6", "route", "change", "fdac:c9:"+remote+"::/64", "dev", preferredInterface, "scope", "link").Run()
-			if err != nil {
-				return false, fmt.Errorf("error executing ip -6 change command: %w", err)
+				return false, fmt.Errorf("failed to change route for %s: %v", remote, err)
 			}
 		} else {
 			logging.Debugf("Route for %s already set to preferred interface %s", remote, iface)
@@ -111,17 +151,41 @@ func updateRoutes(justStarted bool, localID int) (bool, error) {
 	return updated, nil
 }
 
-func addLinkRoute(localID int, remoteID int) error {
+func (w *linkWatchdog) addLink(iface string) error {
+
+	err := tunables.ConfigureInterface(iface)
+	if err != nil {
+		logging.Errorf("Error configuring sysctls for %s: %v\n", iface, err)
+	}
+
+	wgIface, err := netctl.ParseWGInterface(iface)
+	if err != nil {
+		return err
+	}
+
+	remoteID, err := strconv.Atoi(wgIface.RemoteID)
+	if err != nil {
+		return fmt.Errorf("failed to convert remote ID to int: %w", err)
+	}
+
+	err = w.addRoutes(remoteID)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *linkWatchdog) addRoutes(remoteID int) error {
 
 	logging.Debugf("adding route for %d", remoteID)
 
-	iface := "wg" + strconv.Itoa(localID) + "." + strconv.Itoa(remoteID) + "_v"
+	iface := "wg" + strconv.Itoa(w.localID) + "." + strconv.Itoa(remoteID) + "_v"
 	version := "4"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	version, _, err := metrics.GetPreferredPath(ctx, localID, remoteID)
+	version, _, err := metrics.GetPreferredPath(ctx, w.localID, remoteID)
 	if err != nil {
 		var netErr *net.OpError
 		switch {
@@ -134,7 +198,7 @@ func addLinkRoute(localID int, remoteID int) error {
 		}
 	}
 
-	err = addWGLinkRoutes(remoteID, localID, iface+version)
+	err = w.addWGLinkRoutes(iface + version)
 	if err != nil {
 		return err
 	}
@@ -142,7 +206,17 @@ func addLinkRoute(localID int, remoteID int) error {
 	return nil
 }
 
-func addWGLinkRoutes(remoteID, localID int, iface string) error {
+func (w *linkWatchdog) addWGLinkRoutes(iface string) error {
+	wgIface, err := netctl.ParseWGInterface(iface)
+	if err != nil {
+		return fmt.Errorf("error parsing interface %s: %w", iface, err)
+	}
+
+	remoteID, err := strconv.Atoi(wgIface.RemoteID)
+	if err != nil {
+		return fmt.Errorf("failed to convert remote ID to int: %w", err)
+	}
+
 	// Get the interface
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
@@ -155,7 +229,7 @@ func addWGLinkRoutes(remoteID, localID int, iface string) error {
 		return fmt.Errorf("error parsing IPv4 CIDR: %w", err)
 	}
 
-	src4 := net.ParseIP(fmt.Sprintf("10.201.%d.1", localID))
+	src4 := net.ParseIP(fmt.Sprintf("10.201.%d.1", remoteID))
 	if src4 == nil {
 		return fmt.Errorf("error parsing IPv4 source address")
 	}
@@ -172,7 +246,7 @@ func addWGLinkRoutes(remoteID, localID int, iface string) error {
 	}
 
 	// IPv6 route configuration
-	dst6, err := netlink.ParseIPNet(fmt.Sprintf("fdac:c9:%d::/64", remoteID))
+	dst6, err := netlink.ParseIPNet(fmt.Sprintf("fdac:c9:%x::/64", remoteID))
 	if err != nil {
 		return fmt.Errorf("error parsing IPv6 CIDR: %w", err)
 	}
@@ -186,6 +260,66 @@ func addWGLinkRoutes(remoteID, localID int, iface string) error {
 
 	if err := netlink.RouteAdd(route6); err != nil {
 		return fmt.Errorf("error adding IPv6 route: %w", err)
+	}
+
+	return nil
+}
+
+func (w *linkWatchdog) changeWGLinkRoutes(iface string) error {
+
+	wgIface, err := netctl.ParseWGInterface(iface)
+	if err != nil {
+		return fmt.Errorf("error parsing interface %s: %w", iface, err)
+	}
+
+	remoteID, err := strconv.Atoi(wgIface.RemoteID)
+	if err != nil {
+		return fmt.Errorf("failed to convert remote ID to int: %w", err)
+	}
+
+	// Get the interface
+	link, err := netlink.LinkByName(iface)
+	if err != nil {
+		return fmt.Errorf("error getting interface %s: %w", iface, err)
+	}
+
+	// IPv4 route configuration
+	dst4, err := netlink.ParseIPNet(fmt.Sprintf("10.201.%d.0/24", remoteID))
+	if err != nil {
+		return fmt.Errorf("error parsing IPv4 CIDR: %w", err)
+	}
+
+	src4 := net.ParseIP(fmt.Sprintf("10.201.%d.1", remoteID))
+	if src4 == nil {
+		return fmt.Errorf("error parsing IPv4 source address")
+	}
+
+	route4 := &netlink.Route{
+		LinkIndex: link.Attrs().Index,
+		Dst:       dst4,
+		Src:       src4,
+		Scope:     netlink.SCOPE_LINK,
+	}
+
+	if err := netlink.RouteReplace(route4); err != nil {
+		return fmt.Errorf("error replacing IPv4 route: %w", err)
+	}
+
+	// IPv6 route configuration
+	dst6, err := netlink.ParseIPNet(fmt.Sprintf("fdac:c9:%x::/64", remoteID))
+	if err != nil {
+		return fmt.Errorf("error parsing IPv6 CIDR: %w", err)
+	}
+
+	route6 := &netlink.Route{
+		LinkIndex: link.Attrs().Index,
+		Dst:       dst6,
+		Scope:     netlink.SCOPE_LINK,
+		Family:    netlink.FAMILY_V6,
+	}
+
+	if err := netlink.RouteReplace(route6); err != nil {
+		return fmt.Errorf("error replacing IPv6 route: %w", err)
 	}
 
 	return nil

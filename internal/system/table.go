@@ -1,4 +1,4 @@
-package route
+package system
 
 import (
 	"net"
@@ -10,6 +10,8 @@ type RouteTable struct {
 
 	mu       sync.RWMutex
 	updateMu sync.Mutex
+
+	ready bool
 }
 
 type Route struct {
@@ -33,4 +35,24 @@ func (rt *RouteTable) ClearRoutes() {
 	rt.mu.Lock()
 	rt.Routes = []Route{}
 	rt.mu.Unlock()
+}
+
+func (rt *RouteTable) Lock() {
+	rt.updateMu.Lock()
+}
+
+func (rt *RouteTable) Unlock() {
+	rt.updateMu.Unlock()
+}
+
+func (rt *RouteTable) Ready() bool {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	return rt.ready
+}
+
+func (rt *RouteTable) MarkReady() {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.ready = true
 }

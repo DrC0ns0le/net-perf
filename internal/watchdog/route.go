@@ -1,4 +1,4 @@
-package route
+package watchdog
 
 import (
 	"flag"
@@ -7,46 +7,53 @@ import (
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/route/bird"
+	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
 var (
-	alignerInterval = flag.Duration("aligner.interval", 5*time.Second, "Interval to check for missing routes")
+	routeUpdateInterval = flag.Duration("watchdog.route.updateinterval", 5*time.Second, "interval for missing route checks")
 )
 
-type Aligner struct {
-	RouteTable *RouteTable
+type routeWatchdog struct {
+	RouteTable *system.RouteTable
 	RTCache    map[string]hash.Hash64
 
 	needUpdate bool
+	StopCh     chan struct{}
 	RTUpdateCh chan struct{}
 }
 
-func (a *Aligner) Start() {
+func (w *routeWatchdog) Start() {
 
-	time.Sleep(5 * time.Second)
+	for !w.RouteTable.Ready() {
+		time.Sleep(100 * time.Millisecond)
+	}
 
-	logging.Infof("Starting route alignment service")
+	logging.Infof("Starting route watchdog service")
 
-	ticker := time.NewTicker(*alignerInterval)
+	ticker := time.NewTicker(*routeUpdateInterval)
 	defer ticker.Stop()
 	for {
-		<-ticker.C
-		a.RouteTable.updateMu.Lock()
-		a.checkSystemRTAlignment()
-		a.checkBirdChanges()
+		select {
+		case <-w.StopCh:
+			return
+		case <-ticker.C:
+			w.RouteTable.Lock()
+			w.checkSystemRTAlignment()
+			w.checkBirdChanges()
+			w.RouteTable.Unlock()
 
-		if a.needUpdate {
-			a.needUpdate = false
-			a.RTUpdateCh <- struct{}{}
+			if w.needUpdate {
+				w.needUpdate = false
+				w.RTUpdateCh <- struct{}{}
+			}
 		}
-
-		a.RouteTable.updateMu.Unlock()
 	}
 }
 
-func (a *Aligner) checkSystemRTAlignment() {
+func (w *routeWatchdog) checkSystemRTAlignment() {
 	systemRoutes, err := netctl.ListManagedRoutes()
 	if err != nil {
 		logging.Errorf("birdwatcher: Failed to list managed routes: %v", err)
@@ -59,29 +66,29 @@ func (a *Aligner) checkSystemRTAlignment() {
 		managedRoutes[key] = struct{}{}
 	}
 
-	for _, route := range a.RouteTable.Routes {
+	for _, route := range w.RouteTable.Routes {
 		key := fmt.Sprintf("%s_%v", route.Destination.String(), route.Gateway)
 		if _, exists := managedRoutes[key]; !exists {
 			logging.Errorf("birdwatcher: Missing system route %s via %s",
 				route.Destination, route.Gateway)
-			a.needUpdate = true
+			w.needUpdate = true
 		}
 	}
 }
 
-func (a *Aligner) checkBirdChanges() {
+func (w *routeWatchdog) checkBirdChanges() {
 	for _, mode := range []string{"v4", "v6"} {
 		_, hash, err := bird.GetRoutes(mode)
 		if err != nil {
 			logging.Errorf("Error getting routes: %v", err)
 		}
 
-		if _, ok := a.RTCache[mode]; !ok {
-			a.RTCache[mode] = hash
-		} else if a.RTCache[mode].Sum64() != hash.Sum64() {
-			a.RTCache[mode] = hash
+		if _, ok := w.RTCache[mode]; !ok {
+			w.RTCache[mode] = hash
+		} else if w.RTCache[mode].Sum64() != hash.Sum64() {
+			w.RTCache[mode] = hash
 			logging.Debugf("birdwatcher: Bird route table changed: %v", hash)
-			a.needUpdate = true
+			w.needUpdate = true
 			return
 		}
 	}
