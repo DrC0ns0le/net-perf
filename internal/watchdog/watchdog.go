@@ -4,7 +4,6 @@ import (
 	"hash"
 
 	"github.com/DrC0ns0le/net-perf/internal/system"
-	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
 type watchdog struct {
@@ -16,22 +15,25 @@ func Start(global *system.Node) {
 
 	w := &watchdog{
 		link: &linkWatchdog{
-			StopCh:          global.GlobalStopCh,
+			StopCh:          global.StopCh,
 			WGUpdateCh:      global.WGUpdateCh,
 			RTUpdateCh:      global.RTUpdateCh,
 			MeasureUpdateCh: global.MeasureUpdateCh,
 			localID:         global.SiteID,
+			Logger:          global.Logger.With("component", "link"),
 		},
 		route: &routeWatchdog{
+			StopCh:     global.StopCh,
 			RouteTable: global.RouteTable,
 			RTCache:    make(map[string]hash.Hash64),
 			RTUpdateCh: global.RTUpdateCh,
+			Logger:     global.Logger.With("component", "route"),
 		},
 	}
 
 	err := Serve(global)
 	if err != nil {
-		logging.Errorf("failed to start watchdog socket: %v", err)
+		global.Logger.Errorf("failed to start watchdog socket: %v", err)
 	}
 
 	// link watchdog

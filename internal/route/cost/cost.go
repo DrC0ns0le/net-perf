@@ -2,12 +2,15 @@ package cost
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
+	"net"
 	"sync"
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/metrics"
-	"github.com/DrC0ns0le/net-perf/pkg/logging"
+	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 )
 
 const (
@@ -54,19 +57,22 @@ func (c *pathCostCache) cleanExpired() {
 }
 
 // GetPathCost returns the cached cost if available, otherwise calculates and caches it, src and dst is AS number
-func GetPathCost(ctx context.Context, src, dst int) float64 {
+func GetPathCost(ctx context.Context, src, dst int) (float64, error) {
 	key := generateCacheKey(src, dst)
 
 	// Try to get from cache first
 	globalCache.mu.RLock()
 	if entry, exists := globalCache.cache[key]; exists && time.Now().Before(entry.expiration) {
 		globalCache.mu.RUnlock()
-		return entry.cost
+		return entry.cost, nil
 	}
 	globalCache.mu.RUnlock()
 
 	// Not in cache, calculate
-	cost := SetPathCost(ctx, src, dst)
+	cost, err := SetPathCost(ctx, src, dst)
+	if err != nil {
+		return math.Inf(1), err
+	}
 
 	globalCache.mu.Lock()
 	globalCache.cache[key] = cacheEntry{
@@ -75,33 +81,44 @@ func GetPathCost(ctx context.Context, src, dst int) float64 {
 	}
 	globalCache.mu.Unlock()
 
-	return cost
+	return cost, nil
 }
 
 // SetPathCost returns the cost of a path
 // Custom path costs can be added here
-func SetPathCost(ctx context.Context, src, dst int) float64 {
+func SetPathCost(ctx context.Context, src, dst int) (float64, error) {
 
 	switch dst {
 	case 65000:
-		return 0
+		return 0, nil
+	}
+
+	// Check if dst wg interface exists, if not return infinity
+	if !netctl.DstWGInterfaceExists(dst) {
+		return math.Inf(1), nil
 	}
 
 	_, cost, err := metrics.GetPreferredPath(ctx, src-64512, dst-64512)
 	if err != nil {
-		logging.Errorf("Error getting preferred path and cost for %d -> %d: %v\n", src, dst, err)
-		return 0
+		var netErr *net.OpError
+		switch {
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr):
+			return 0, fmt.Errorf("timed out getting preferred interface version for %d -> %d", src, dst)
+		case errors.Is(err, metrics.ErrNoPaths):
+			return 0, fmt.Errorf("no available paths for %d -> %d", src, dst)
+		default:
+			return 0, fmt.Errorf("failed to get path cost for %d -> %d: %v", src, dst, err)
+		}
 	}
 
 	if cost == 0 {
-		logging.Errorf("Unexpected cost of 0 for %d -> %d\n", src, dst)
-		return 0
+		return 0, fmt.Errorf("unexpected cost of 0 for %d -> %d", src, dst)
 	}
 
 	switch dst {
 	case 64512:
-		cost = 1.5 * cost
+		cost = 3 * cost
 	}
 
-	return cost
+	return cost, nil
 }

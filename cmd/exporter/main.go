@@ -43,6 +43,8 @@ var (
 	}
 
 	sitesSet = map[int]bool{}
+
+	logger = logging.NewDefaultLogger()
 )
 
 func main() {
@@ -56,7 +58,7 @@ func main() {
 		sitesSet[site] = true
 		conn, err := grpc.NewClient(fmt.Sprintf("10.201.%d.1:%d", site, *managementRPCPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
-			logging.Errorf("Error connecting to site %d daemon: %v\n", site, err)
+			logger.Errorf("error connecting to site %d daemon: %v\n", site, err)
 			continue
 		}
 		defer conn.Close()
@@ -98,13 +100,13 @@ func main() {
 	ticker := time.NewTicker(*updateInterval)
 	defer ticker.Stop()
 
-	logging.Infof("Running initial route check")
+	logger.Infof("running initial route check")
 	if err := runRouteCheck(nodes, esClient, prevRoutes); err != nil {
 		log.Printf("Error in route check: %v", err)
 	}
 
 	for range ticker.C {
-		logging.Infof("Running route check")
+		logger.Infof("running route check")
 		if err := runRouteCheck(nodes, esClient, prevRoutes); err != nil {
 			log.Printf("Error in route check: %v", err)
 		}
@@ -175,7 +177,7 @@ func runRouteCheck(nodes map[int]*grpc.ClientConn, esClient *elasticsearch.Clien
 
 		r, err := s.GetRouteTable(context.Background(), &pb.GetRouteTableRequest{})
 		if err != nil {
-			logging.Errorf("Error getting routes from site %d: %v\n", site, err)
+			logger.Errorf("error getting routes from site %d: %v\n", site, err)
 			continue
 		}
 
@@ -193,19 +195,19 @@ func runRouteCheck(nodes map[int]*grpc.ClientConn, esClient *elasticsearch.Clien
 				if sitesSet[int(ipv4[1])] {
 					wgIf, err := netctl.ParseWGInterface(route.Interface)
 					if err != nil {
-						logging.Errorf("Error parsing interface %s: %v", route.Interface, err)
+						logger.Errorf("error parsing interface %s: %v", route.Interface, err)
 						continue
 					}
 
 					localID, err := strconv.Atoi(wgIf.LocalID)
 					if err != nil {
-						logging.Errorf("Error parsing local ID %s: %v", wgIf.LocalID, err)
+						logger.Errorf("error parsing local ID %s: %v", wgIf.LocalID, err)
 						continue
 					}
 
 					remoteID, err := strconv.Atoi(wgIf.RemoteID)
 					if err != nil {
-						logging.Errorf("Error parsing remote ID %s: %v", wgIf.RemoteID, err)
+						logger.Errorf("error parsing remote ID %s: %v", wgIf.RemoteID, err)
 						continue
 					}
 
@@ -241,7 +243,7 @@ func tracePath(routeMap map[int]map[int]int, esClient *elasticsearch.Client, pre
 					}
 					count += 1
 					if count > 10 {
-						logging.Errorf("Too many hops for route %d -> %d", source, dst)
+						logger.Errorf("too many hops for route %d -> %d", source, dst)
 						break
 					}
 					via = next
@@ -277,7 +279,7 @@ func tracePath(routeMap map[int]map[int]int, esClient *elasticsearch.Client, pre
 		for _, route := range routes {
 			dijkstraPath, _, err := graph.GetShortestPath(source, route.Dest)
 			if err != nil {
-				logging.Errorf("Failed to get shortest path for %d -> %d: %v", source, route.Dest, err)
+				logger.Errorf("Failed to get shortest path for %d -> %d: %v", source, route.Dest, err)
 				continue
 			}
 
@@ -333,7 +335,7 @@ func tracePath(routeMap map[int]map[int]int, esClient *elasticsearch.Client, pre
 	for _, record := range routeHistory {
 		data, err := json.Marshal(record)
 		if err != nil {
-			logging.Errorf("Failed to marshal route record: %v", err)
+			logger.Errorf("Failed to marshal route record: %v", err)
 			continue
 		}
 
@@ -344,13 +346,13 @@ func tracePath(routeMap map[int]map[int]int, esClient *elasticsearch.Client, pre
 				Body:   bytes.NewReader(data),
 				OnFailure: func(ctx context.Context, item esutil.BulkIndexerItem, res esutil.BulkIndexerResponseItem, err error) {
 					if err != nil {
-						logging.Errorf("Failed to index route record: %v", err)
+						logger.Errorf("Failed to index route record: %v", err)
 					}
 				},
 			},
 		)
 		if err != nil {
-			logging.Errorf("Failed to add record to bulk indexer: %v", err)
+			logger.Errorf("Failed to add record to bulk indexer: %v", err)
 		}
 	}
 

@@ -21,6 +21,17 @@ type Worker struct {
 
 	// Stop channel
 	stopCh chan struct{}
+
+	// Logger
+	logger logging.Logger
+}
+
+type Config struct {
+	SourceIP   string
+	TargetIP   string
+	TargetPort int
+
+	Logger logging.Logger
 }
 
 var workerMap = make(map[string]*Worker)
@@ -29,7 +40,7 @@ func Start(global *system.Node) {
 	manageWorkers := func() {
 		ifaces, err := netctl.GetAllWGInterfaces()
 		if err != nil {
-			logging.Errorf("Error getting interfaces: %v", err)
+			global.Logger.Errorf("error getting interfaces: %v", err)
 		}
 
 		for i, w := range workerMap {
@@ -41,7 +52,7 @@ func Start(global *system.Node) {
 				}
 			}
 			if !found {
-				logging.Infof("Interface %s no longer exists, stopping worker\n", i)
+				global.Logger.Infof("wg interface %s no longer exists, stopping worker", i)
 				close(w.stopCh)
 				delete(workerMap, i)
 			}
@@ -49,13 +60,14 @@ func Start(global *system.Node) {
 
 		for _, iface := range ifaces {
 			if _, ok := workerMap[iface.Name]; !ok {
-				logging.Infof("Found new WG interface: %s", iface.Name)
+				global.Logger.Debugf("found new WG interface: %s", iface.Name)
 				worker := &Worker{
 					iface:      iface,
 					stopCh:     make(chan struct{}),
 					sourceIP:   fmt.Sprintf("10.201.%s.%s", iface.LocalID, iface.IPVersion),
 					targetIP:   fmt.Sprintf("10.201.%s.%s", iface.RemoteID, iface.IPVersion),
 					targetPort: 22,
+					logger:     global.Logger.With("worker", iface.Name),
 				}
 				workerMap[iface.Name] = worker
 				go startLatencyWorker(worker)
@@ -72,17 +84,13 @@ func Start(global *system.Node) {
 			manageWorkers()
 		case <-global.MeasureUpdateCh:
 			manageWorkers()
-		case <-global.GlobalStopCh:
-			stop()
+		case <-global.StopCh:
+			global.Logger.Info("stopping measurement workers...")
+			for _, w := range workerMap {
+				close(w.stopCh)
+			}
 			return
 		}
-	}
-}
-
-func stop() {
-	logging.Info("Stopping measurement workers...")
-	for _, w := range workerMap {
-		close(w.stopCh)
 	}
 }
 

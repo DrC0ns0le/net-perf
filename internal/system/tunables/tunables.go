@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
-	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
 func ConfigureInterface(iface string) error {
@@ -33,8 +32,6 @@ func ConfigureInterface(iface string) error {
 			return fmt.Errorf("failed to set interface sysctl %s: %v", key, err)
 		}
 	}
-
-	logging.Infof("Configured interface %s sysctl", iface)
 
 	return nil
 }

@@ -31,20 +31,26 @@ type Bird struct {
 	Config     *bird.Config
 	RouteTable *system.RouteTable
 
-	GlobalStopCh chan struct{}
-	RTUpdateCh   chan struct{}
+	StopCh     chan struct{}
+	RTUpdateCh chan struct{}
+
+	Logger logging.Logger
 }
 
 func (b *Bird) Watcher() {
 	// Initial run
 	err := b.run()
 	if err != nil {
-		logging.Errorf("Error in initial bird route table sync: %v", err)
+		b.Logger.Errorf("error in initial bird route table sync: %v", err)
 	}
-	netctl.RemoveAllManagedRoutes()
+	removed, err := netctl.RemoveAllManagedRoutes()
+	if err != nil {
+		b.Logger.Errorf("removed only %d routes: %v", removed, err)
+	}
+	b.Logger.Infof("removed %d routes", removed)
 	err = b.run()
 	if err != nil {
-		logging.Errorf("Error in initial bird route table sync: %v", err)
+		b.Logger.Errorf("error in initial bird route table sync: %v", err)
 	}
 
 	b.RouteTable.MarkReady()
@@ -59,18 +65,18 @@ func (b *Bird) Watcher() {
 
 	for {
 		select {
-		case <-b.GlobalStopCh:
+		case <-b.StopCh:
 			return
 		case <-timer.C:
 			timer.Stop()
 			if err := b.run(); err != nil {
-				logging.Errorf("Error in bird route table sync: %v", err)
+				b.Logger.Errorf("error syncing bird route table: %v", err)
 			}
 			goto mainDaemonLoop
 		case <-b.RTUpdateCh:
-			logging.Infof("Triggering route table update")
+			b.Logger.Debugf("triggering route table update")
 			if err := b.run(); err != nil {
-				logging.Errorf("Error in bird route table sync: %v", err)
+				b.Logger.Errorf("error syncing bird route table: %v", err)
 			}
 		}
 	}
@@ -84,17 +90,17 @@ mainDaemonLoop:
 	// Main daemon loop
 	for {
 		select {
-		case <-b.GlobalStopCh:
+		case <-b.StopCh:
 			return
 		case <-ticker.C:
 			if err := b.run(); err != nil {
-				logging.Errorf("Error in bird route table sync: %v", err)
+				b.Logger.Errorf("error syncing bird route table: %v", err)
 				// Continue running even if there's an error
 			}
 		case <-b.RTUpdateCh:
-			logging.Infof("Triggering route table update")
+			b.Logger.Infof("triggering route table update")
 			if err := b.run(); err != nil {
-				logging.Errorf("Error in bird route table sync: %v", err)
+				b.Logger.Errorf("error syncing bird route table: %v", err)
 			}
 		}
 	}
@@ -136,7 +142,10 @@ func (b *Bird) UpdateRoutes(ctx context.Context, routes []bird.Route, mode strin
 		var chosenPathIndex int
 		minCost := math.Inf(1)
 		for i, path := range route.Paths {
-			totalCost := CalculateTotalCost(ctx, b.Config, path.ASPath)
+			totalCost, err := CalculateTotalCost(ctx, b.Config, path.ASPath)
+			if err != nil {
+				return fmt.Errorf("error calculating total cost: %w", err)
+			}
 			if totalCost < minCost {
 				minCost = totalCost
 				chosenPathIndex = i
@@ -152,7 +161,7 @@ func (b *Bird) UpdateRoutes(ctx context.Context, routes []bird.Route, mode strin
 		if len(route.Paths[chosenPathIndex].ASPath) == 0 || !strings.HasPrefix(route.Paths[chosenPathIndex].Interface, "wg") {
 			continue
 		} else {
-			err := netctl.ConfigureRoute(route.Network, route.Paths[chosenPathIndex].Next, func() net.IP {
+			code, err := netctl.ConfigureRoute(route.Network, route.Paths[chosenPathIndex].Next, func() net.IP {
 				if mode == "v6" {
 					return outboundV6
 				} else {
@@ -161,6 +170,14 @@ func (b *Bird) UpdateRoutes(ctx context.Context, routes []bird.Route, mode strin
 			}())
 			if err != nil {
 				return fmt.Errorf("error configuring route for network %s: %w", route.Network, err)
+			}
+			switch code {
+			case 1:
+				b.Logger.Infof("new route added for network %s via %s", route.Network, route.Paths[chosenPathIndex].Next)
+			case 2:
+				b.Logger.Infof("existing route updated for network %s via %s", route.Network, route.Paths[chosenPathIndex].Next)
+			default:
+				b.Logger.Debugf("route unchanged for network %s via %s", route.Network, route.Paths[chosenPathIndex].Next)
 			}
 
 			b.RouteTable.AddRoute(route.Network, route.Paths[chosenPathIndex].Next)
@@ -173,19 +190,24 @@ func (b *Bird) UpdateRoutes(ctx context.Context, routes []bird.Route, mode strin
 // CalculateTotalCost returns the total cost of a BGP path given its AS path and the local AS number.
 // The total cost is calculated as the sum of the costs of each hop in the path, plus 10 for each additional hop.
 // If any of the intermediate costs are infinite, the total cost is set to infinity and returned.
-func CalculateTotalCost(ctx context.Context, config *bird.Config, asPath []int) float64 {
+func CalculateTotalCost(ctx context.Context, config *bird.Config, asPath []int) (float64, error) {
 	var totalCost float64
 	for i, as := range asPath {
 		var c float64
+		var err error
 		if i > 0 {
-			c = cost.GetPathCost(ctx, asPath[i-1], as)
+			c, err = cost.GetPathCost(ctx, asPath[i-1], as)
 		} else {
-			c = cost.GetPathCost(ctx, config.ASNumber, as)
+			c, err = cost.GetPathCost(ctx, config.ASNumber, as)
 		}
+		if err != nil {
+			return math.Inf(1), err
+		}
+		// if any of the intermediate costs are infinite, early return infinity
 		if c == math.Inf(1) {
-			return math.Inf(1)
+			return math.Inf(1), nil
 		}
 		totalCost += c + 10
 	}
-	return totalCost
+	return totalCost, nil
 }

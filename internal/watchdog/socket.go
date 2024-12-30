@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -31,28 +30,28 @@ func Serve(global *system.Node) error {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 
-	logging.Infof("Watchdog socket listening at %s", *SocketPath)
+	global.Logger.With("component", "socket").Infof("Watchdog socket listening at %s", *SocketPath)
 	go func() {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
 				select {
-				case <-global.GlobalStopCh:
+				case <-global.StopCh:
 					listener.Close()
 					return
 				default:
-					logging.Errorf("error accepting connection: %v", err)
+					global.Logger.With("component", "socket").Errorf("error accepting connection: %v", err)
 					continue
 				}
 			}
-			go HandleConnection(conn, global.WGUpdateCh)
+			go HandleConnection(conn, global.WGUpdateCh, global.Logger.With("component", "socket"))
 		}
 	}()
 
 	return nil
 }
 
-func HandleConnection(conn net.Conn, WGUpdateCh chan netctl.WGInterface) {
+func HandleConnection(conn net.Conn, WGUpdateCh chan netctl.WGInterface, logger logging.Logger) {
 	defer conn.Close()
 
 	conn.SetReadDeadline(time.Now().Add(*SocketConnectionTimeout))
@@ -63,18 +62,18 @@ func HandleConnection(conn net.Conn, WGUpdateCh chan netctl.WGInterface) {
 		message, err := reader.ReadString('\n')
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("Error reading from socket: %v", err)
+				logger.Errorf("error reading from socket: %v", err)
 			}
 			return
 		}
 
 		message = strings.TrimSpace(message)
-		logging.Debugf("Received message from socket: %s", message)
+		logger.Debugf("Received message from socket: %s", message)
 
 		if strings.HasPrefix(message, "wg") {
 			wgIface, err := netctl.ParseWGInterface(message)
 			if err != nil {
-				logging.Errorf("Error parsing wg interface: %v", err)
+				logger.Errorf("error parsing wg interface: %v", err)
 				conn.Write([]byte(fmt.Sprintf("ERROR: %v\n", err)))
 				continue
 			}
@@ -82,7 +81,6 @@ func HandleConnection(conn net.Conn, WGUpdateCh chan netctl.WGInterface) {
 			select {
 			case WGUpdateCh <- wgIface:
 				conn.Write([]byte("OK\n"))
-				logging.Infof("Got messsage of new interface: %s", wgIface.Name)
 			case <-time.After(*SocketConnectionTimeout):
 				conn.Write([]byte("ERROR: timeout writing to channel\n"))
 			}

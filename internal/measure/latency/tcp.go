@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func MeasureTCP(ctx context.Context, sourceIP, targetIP string, targetPort int) (Result, error) {
+func (c *Client) MeasureTCP(ctx context.Context, targetPort int) (Result, error) {
 	const attempts = 10
 	latencies := make([]int64, 0, attempts)
 
@@ -16,13 +16,13 @@ func MeasureTCP(ctx context.Context, sourceIP, targetIP string, targetPort int) 
 
 		dialer := &net.Dialer{
 			LocalAddr: &net.TCPAddr{
-				IP: net.ParseIP(sourceIP),
+				IP: c.SourceIP,
 			},
 			Timeout:   2 * time.Second,
 			KeepAlive: 100 * time.Millisecond,
 		}
 
-		conn, err := dialer.DialContext(ctx, "tcp4", net.JoinHostPort(targetIP, fmt.Sprintf("%d", targetPort)))
+		conn, err := dialer.DialContext(ctx, "tcp4", net.JoinHostPort(c.TargetIP.String(), fmt.Sprintf("%d", targetPort)))
 		if err != nil {
 			continue
 		}

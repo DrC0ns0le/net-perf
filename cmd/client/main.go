@@ -28,6 +28,8 @@ var (
 	sitesSet = map[int]bool{}
 
 	routeMap = map[int]map[int]int{}
+
+	logger = logging.NewDefaultLogger()
 )
 
 func main() {
@@ -41,7 +43,7 @@ func main() {
 		sitesSet[site] = true
 		conn, err := grpc.NewClient(fmt.Sprintf("10.201.%d.1:%d", site, *managementRPCPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
-			logging.Errorf("Error connecting to site %d daemon: %v\n", site, err)
+			logger.Errorf("error connecting to site %d daemon: %v\n", site, err)
 			continue
 		}
 		defer conn.Close()
@@ -53,7 +55,7 @@ func main() {
 
 		r, err := s.GetRouteTable(context.Background(), &pb.GetRouteTableRequest{})
 		if err != nil {
-			logging.Errorf("Error getting routes from site %d: %v\n", site, err)
+			logger.Errorf("error getting routes from site %d: %v\n", site, err)
 			continue
 		}
 
@@ -71,19 +73,19 @@ func main() {
 				if sitesSet[int(ipv4[1])] {
 					wgIf, err := netctl.ParseWGInterface(route.Interface)
 					if err != nil {
-						logging.Errorf("Error parsing interface %s: %v", route.Interface, err)
+						logger.Errorf("error parsing interface %s: %v", route.Interface, err)
 						continue
 					}
 
 					localID, err := strconv.Atoi(wgIf.LocalID)
 					if err != nil {
-						logging.Errorf("Error parsing local ID %s: %v", wgIf.LocalID, err)
+						logger.Errorf("error parsing local ID %s: %v", wgIf.LocalID, err)
 						continue
 					}
 
 					remoteID, err := strconv.Atoi(wgIf.RemoteID)
 					if err != nil {
-						logging.Errorf("Error parsing remote ID %s: %v", wgIf.RemoteID, err)
+						logger.Errorf("error parsing remote ID %s: %v", wgIf.RemoteID, err)
 						continue
 					}
 
@@ -121,7 +123,7 @@ func tracePath(routeMap map[int]map[int]int) {
 
 					count += 1
 					if count > 10 {
-						logging.Errorf("Too many hops for route %d -> %d", source, dst)
+						logger.Errorf("too many hops for route %d -> %d", source, dst)
 						break
 					}
 
@@ -164,7 +166,7 @@ func tracePath(routeMap map[int]map[int]int) {
 		for _, route := range routes {
 			path, _, err := graph.GetShortestPath(source, route.Dest)
 			if err != nil {
-				logging.Errorf("Dijkstra failed to get shortest path for %d -> %d: %v", source, route.Dest, err)
+				logger.Errorf("Dijkstra failed to get shortest path for %d -> %d: %v", source, route.Dest, err)
 				continue
 			}
 			fmt.Printf("  To: %d\n", route.Dest)

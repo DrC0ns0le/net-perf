@@ -56,7 +56,10 @@ func NewGraph(ctx context.Context) (*Graph, error) {
 		if a > b {
 			a, b = b, a
 		}
-		cost := cost.GetPathCost(ctx, a+64512, b+64512)
+		cost, err := cost.GetPathCost(ctx, a+64512, b+64512)
+		if err != nil {
+			return nil, err
+		}
 		g.matrix[path.source][path.target] = cost
 	}
 

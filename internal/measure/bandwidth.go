@@ -2,16 +2,15 @@ package measure
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"math"
+	"net"
 	"strconv"
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/measure/bandwidth"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
-	"github.com/DrC0ns0le/net-perf/pkg/logging"
+	"github.com/cespare/xxhash"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -44,13 +43,18 @@ func startBandwidthWorker(worker *Worker) {
 	key := fmt.Sprintf("iface=%s, sourceIP=%s, targetIP=%s, targetPort=%d",
 		worker.iface.Name, worker.sourceIP, worker.targetIP, worker.targetPort)
 
-	hash := sha256.Sum256([]byte(key))
-	h := binary.BigEndian.Uint64(hash[:8])
+	h := xxhash.Sum64String(key)
 
 	randSleep := time.Duration(float64(50*time.Second) * (float64(h) / (1 << 64)))
 	time.Sleep(randSleep)
 
-	logging.Debugf("Starting bandwidth measurement on %s\n", worker.iface.Name)
+	test := &bandwidth.Client{
+		SourceIP: net.ParseIP(worker.sourceIP),
+		TargetIP: net.ParseIP(worker.targetIP),
+		Logger:   worker.logger,
+	}
+
+	worker.logger.Debugf("Starting bandwidth measurement on %s\n", worker.iface.Name)
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -61,9 +65,9 @@ func startBandwidthWorker(worker *Worker) {
 
 			go func() {
 				// measure
-				data, err := bandwidth.MeasureUDP(ctx, worker.sourceIP, worker.targetIP)
+				data, err := test.MeasureUDP(ctx)
 				if err != nil {
-					logging.Errorf("%s: error measuring UDP bandwidth: %v", worker.iface.Name, err)
+					worker.logger.Errorf("error measuring UDP bandwidth: %v", err)
 				}
 
 				// generate metrics
@@ -71,7 +75,7 @@ func startBandwidthWorker(worker *Worker) {
 			}()
 
 		case <-worker.stopCh:
-			logging.Infof("Stopping bandwidth measurement on %s", worker.iface.Name)
+			worker.logger.Infof("stopping bandwidth measurement on %s", worker.iface.Name)
 
 			// Set metrics to NaN
 			generateBandwidthMetrics(bandwidth.Result{}, worker.iface)

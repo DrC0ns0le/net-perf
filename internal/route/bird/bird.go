@@ -6,8 +6,6 @@ import (
 	"net"
 	"strings"
 	"time"
-
-	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
 const (
@@ -37,7 +35,9 @@ func Begin(mode string) (net.Conn, *bufio.Reader, *bufio.Writer, error) {
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("error reading welcome message: %v", err)
 	}
-	logging.Debug("Welcome message: ", strings.TrimPrefix(welcome, "0001 "))
+	if !strings.HasPrefix(welcome, "0001 ") {
+		return nil, nil, nil, fmt.Errorf("invalid welcome message: %s", welcome)
+	}
 
 	return conn, reader, writer, nil
 }

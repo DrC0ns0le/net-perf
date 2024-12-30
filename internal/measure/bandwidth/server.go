@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
+	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
@@ -25,22 +25,30 @@ type Server struct {
 
 	// Stop channel
 	stopCh chan struct{}
+
+	logger logging.Logger
 }
 
 var runningServers []*Server
 
-func Serve() {
+func Serve(global *system.Node) {
+
+	if *bandwidthBufferSize < *bandwidthPacketSize+12 {
+		*bandwidthBufferSize = *bandwidthPacketSize + 12
+		global.Logger.Warnf("configured buffer size too small, using %d bytes", *bandwidthBufferSize)
+	}
 
 	localAddrs, err := netctl.GetLocalLoopbackIP()
 	if err != nil {
-		log.Fatal(err)
+		global.Logger.Fatal(err)
 	}
 
 	for _, addr := range localAddrs {
 		runningServers = append(runningServers, &Server{
-			localAddr: addr + ":" + strconv.Itoa(*bandwidthPort),
+			localAddr: fmt.Sprintf("%s:%d", addr, *bandwidthPort),
 			stopCh:    make(chan struct{}),
 			clients:   make(map[string]chan Packet),
+			logger:    global.Logger.With("component", "server", "listener", fmt.Sprintf("%s:%d", addr, *bandwidthPort)),
 		})
 	}
 
@@ -61,7 +69,7 @@ func (s *Server) Run() {
 	}
 	defer s.conn.Close()
 
-	logging.Infof("Bandwidth server listening on %s", s.conn.LocalAddr().String())
+	s.logger.Infof("bandwidth server started")
 	s.processPacket()
 }
 
@@ -70,17 +78,17 @@ func (s *Server) processPacket() {
 	for {
 		select {
 		case <-s.stopCh:
-			log.Println("Stopping server")
+			s.logger.Infof("stopping server")
 			return
 		default:
 			n, remoteAddr, err := s.conn.ReadFromUDP(buffer)
 			if err != nil {
-				log.Println("Error reading:", err)
+				s.logger.Errorf("error reading: %v", err)
 				continue
 			}
 
 			if n < 12 {
-				log.Println("Received packet too small")
+				s.logger.Errorf("received packet too small")
 				continue
 			}
 
@@ -100,7 +108,7 @@ func (s *Server) processPacket() {
 			receiveChan <- packet
 
 			if len(receiveChan) > *bandwidthChannelBufferSize/2 {
-				logging.Infof("Warning: channel buffer is %.1f%% full", float64(len(receiveChan))/float64(*bandwidthChannelBufferSize)*100)
+				s.logger.Warnf("channel buffer is %.1f%% full", float64(len(receiveChan))/float64(*bandwidthChannelBufferSize)*100)
 			}
 
 		}
@@ -117,14 +125,14 @@ func (s *Server) clientWorker(receiveChan chan Packet) {
 	for {
 		select {
 		case <-s.stopCh:
-			log.Println("Stopping client worker for", stats.ClientAddr.String())
+			s.logger.Infof("stopping client worker")
 			return
 		case <-ticker.C:
 			if stats.TotalPackets > 0 {
 				go s.sendStats(stats)
 			}
 		case <-timeoutTicker.C:
-			logging.Errorf("Test failed due to %s timeout, received %d packets, dropped %d, out of order %d, average jitter %d, jitter variance %f",
+			s.logger.Errorf("test failed due to %s timeout, received %d packets, dropped %d, out of order %d, average jitter %d, jitter variance %f",
 				stats.ClientAddr.String(), stats.TotalPackets, stats.DroppedPackets, stats.OutOfOrderPackets, stats.AverageJitter, stats.JitterVariance)
 			s.mu.Lock()
 			delete(s.clients, stats.ClientAddr.String())
@@ -215,6 +223,6 @@ func (s *Server) sendFinalStats(stats *ClientStats) {
 func (s *Server) sendMessage(addr *net.UDPAddr, message string) {
 	_, err := s.conn.WriteToUDP([]byte(message), addr)
 	if err != nil {
-		logging.Errorf("Error sending message to %s: %v", addr, err)
+		s.logger.Errorf("error sending message to %s: %v", addr, err)
 	}
 }

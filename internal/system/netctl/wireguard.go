@@ -220,6 +220,21 @@ func GetLocalLoopbackIP() ([]string, error) {
 	return loopbackIPs, nil
 }
 
+func DstWGInterfaceExists(dst int) bool {
+	wgIfs, err := GetAllWGInterfaces()
+	if err != nil {
+		return false
+	}
+
+	for _, iface := range wgIfs {
+		if iface.RemoteID == strconv.Itoa(dst) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func parseIP(hexIP string) (net.IP, error) {
 	rawIP, err := strconv.ParseUint(hexIP, 16, 32)
 	if err != nil {

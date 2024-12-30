@@ -4,8 +4,6 @@ import (
 	"flag"
 	"net"
 	"time"
-
-	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
 var (
@@ -85,13 +83,6 @@ type Result struct {
 	TargetDuration int
 	// Specified packet size in bytes
 	PacketSize int
-}
-
-func init() {
-	if *bandwidthBufferSize < *bandwidthPacketSize+12 {
-		*bandwidthBufferSize = *bandwidthPacketSize + 12
-		logging.Infof("Configured buffer size too small, using %d bytes", *bandwidthBufferSize)
-	}
 }
 
 // func padToEight(s string) []byte {

@@ -8,14 +8,15 @@ import (
 )
 
 // Measures ICMP connection latency
-func MeasureICMP(ctx context.Context, sourceIP, targetIP string) (Result, error) {
-	pinger, err := probing.NewPinger(targetIP)
+func (c *Client) MeasureICMP(ctx context.Context) (Result, error) {
+	pinger, err := probing.NewPinger(c.TargetIP.String())
 	if err != nil {
 		return Result{Status: 0, Protocol: "icmp"}, err
 	}
-	pinger.Source = sourceIP
+	pinger.Source = c.SourceIP.String()
 	pinger.SetPrivileged(true)
 	pinger.Interval = 250 * time.Millisecond
+	pinger.Timeout = 2 * time.Second
 	pinger.Count = 10
 	err = pinger.RunWithContext(ctx) // Blocks until finished.
 	if err != nil {

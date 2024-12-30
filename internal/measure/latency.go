@@ -2,15 +2,14 @@ package measure
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"math"
+	"net"
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/measure/latency"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
-	"github.com/DrC0ns0le/net-perf/pkg/logging"
+	"github.com/cespare/xxhash"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -38,13 +37,17 @@ func startLatencyWorker(worker *Worker) {
 	key := fmt.Sprintf("iface=%s, sourceIP=%s, targetIP=%s, targetPort=%d",
 		worker.iface.Name, worker.sourceIP, worker.targetIP, worker.targetPort)
 
-	hash := sha256.Sum256([]byte(key))
-	h := binary.BigEndian.Uint64(hash[:8])
+	h := xxhash.Sum64String(key)
 
 	randSleep := time.Duration(float64(5*time.Second) * (float64(h) / (1 << 64)))
 	time.Sleep(randSleep)
 
-	logging.Debugf("Starting latency measurement on %s\n", worker.iface.Name)
+	test := &latency.Client{
+		SourceIP: net.ParseIP(worker.sourceIP),
+		TargetIP: net.ParseIP(worker.targetIP),
+	}
+
+	worker.logger.Debugf("Starting latency measurement on %s\n", worker.iface.Name)
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -55,9 +58,9 @@ func startLatencyWorker(worker *Worker) {
 
 			go func() {
 				// measure
-				data, err := latency.MeasureTCP(ctx, worker.sourceIP, worker.targetIP, worker.targetPort)
+				data, err := test.MeasureTCP(ctx, worker.targetPort)
 				if err != nil {
-					logging.Errorf("%s: error measuring TCP latency: %v", worker.iface.Name, err)
+					worker.logger.Errorf("error measuring TCP latency: %v", err)
 				}
 
 				// generate metrics
@@ -65,9 +68,9 @@ func startLatencyWorker(worker *Worker) {
 			}()
 
 			go func() {
-				data, err := latency.MeasureICMP(ctx, worker.sourceIP, worker.targetIP)
+				data, err := test.MeasureICMP(ctx)
 				if err != nil {
-					logging.Errorf("%s: error measuring ICMP latency: %v", worker.iface.Name, err)
+					worker.logger.Errorf("error measuring ICMP latency: %v", err)
 				}
 
 				// generate metrics
@@ -76,7 +79,7 @@ func startLatencyWorker(worker *Worker) {
 			}()
 
 		case <-worker.stopCh:
-			logging.Infof("Stopping latency measurement on %s", worker.iface.Name)
+			worker.logger.Info("stopping latency measurement")
 
 			// Set metrics to NaN
 			generateLatencyMetrics(latency.Result{

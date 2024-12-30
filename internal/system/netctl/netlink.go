@@ -4,30 +4,26 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/DrC0ns0le/net-perf/pkg/logging"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
 
-// ConfigureRoute creates or updates a route in the Linux routing table.
-// It takes a network (*net.IPNet), gateway address (net.IP), and optional source IP as input.
-// The route will be marked with our custom protocol identifier.
-// If a route already exists with different parameters, it will be updated.
-// Returns an error if the operation fails.
-func ConfigureRoute(dst *net.IPNet, gw net.IP, src net.IP) error {
+// ConfigureRoute configures a route for the specified network.
+// Returns 0 if no route changes were made, 1 if a new route was added, and 2 if an existing route was updated.
+func ConfigureRoute(dst *net.IPNet, gw net.IP, src net.IP) (int, error) {
 	if dst == nil {
-		return fmt.Errorf("network cannot be nil")
+		return 0, fmt.Errorf("network cannot be nil")
 	}
 	if gw == nil {
-		return fmt.Errorf("gateway cannot be nil")
+		return 0, fmt.Errorf("gateway cannot be nil")
 	}
 
 	// Validate IP versions match
 	if (dst.IP.To4() != nil) != (gw.To4() != nil) {
-		return fmt.Errorf("destination and gateway IP versions must match")
+		return 0, fmt.Errorf("destination and gateway IP versions must match")
 	}
 	if src != nil && (gw.To4() != nil) != (src.To4() != nil) {
-		return fmt.Errorf("source and gateway IP versions must match")
+		return 0, fmt.Errorf("source and gateway IP versions must match")
 	}
 
 	route := &netlink.Route{
@@ -43,7 +39,7 @@ func ConfigureRoute(dst *net.IPNet, gw net.IP, src net.IP) error {
 	}
 	existing, err := netlink.RouteListFiltered(netlink.FAMILY_ALL, filter, netlink.RT_FILTER_DST)
 	if err != nil {
-		return fmt.Errorf("failed to list routes: %v", err)
+		return 0, fmt.Errorf("failed to list routes: %v", err)
 	}
 
 	// Check for existing managed route
@@ -52,31 +48,26 @@ func ConfigureRoute(dst *net.IPNet, gw net.IP, src net.IP) error {
 			// Check if parameters need updating
 			if r.Gw.Equal(gw) &&
 				((src == nil && r.Src == nil) || (src != nil && r.Src != nil && r.Src.Equal(src))) {
-				logging.Debugf("Route to %s via %s already exists with correct parameters", dst, gw)
-				return nil
+				// No changes needed
+				return 0, nil
 			}
 			// Update existing route
-			logging.Infof("Updating existing route to %s via %s", dst, gw)
 			if err := netlink.RouteReplace(route); err != nil {
-				return fmt.Errorf("failed to update route: %v", err)
+				return 0, fmt.Errorf("failed to update route: %v", err)
 			}
-			return nil
+			return 2, nil
 		}
 	}
 
-	// Add new route
-	logging.Debugf("Adding route to %s via %s", dst, gw)
 	err = netlink.RouteAdd(route)
 	if err != nil {
 		if err == unix.EEXIST {
-			logging.Debugf("Route exists but not visible, attempting replace for %s via %s", dst, gw)
-			return netlink.RouteReplace(route)
+			return 2, netlink.RouteReplace(route)
 		}
-		return fmt.Errorf("failed to add route: %v", err)
+		return 0, fmt.Errorf("failed to add route: %v", err)
 	}
-	logging.Infof("Added route to %s via %s", dst, gw)
 
-	return nil
+	return 1, nil
 }
 
 // RemoveRoute removes a route from the Linux routing table given a network.
@@ -102,7 +93,6 @@ func RemoveRoute(dst *net.IPNet) error {
 		}
 		return nil
 	}
-	logging.Infof("Removed route to %s", dst)
 
 	return nil
 }
@@ -191,6 +181,7 @@ func GetRoute(dst *net.IPNet, gw, src net.IP) (*netlink.Route, error) {
 // (identified by CustomRouteProtocol).
 // Returns the number of routes removed and any error encountered.
 func RemoveAllManagedRoutes() (int, error) {
+	var failedRoutes []netlink.Route
 	// Get list of all managed routes
 	routes, err := ListManagedRoutes()
 	if err != nil {
@@ -205,15 +196,14 @@ func RemoveAllManagedRoutes() (int, error) {
 		err := netlink.RouteDel(&route)
 		if err != nil {
 			// Log error but continue trying to remove other routes
-			logging.Errorf("failed to remove route %v: %v", route, err)
+			failedRoutes = append(failedRoutes, route)
 			continue
 		}
 		removed++
-		logging.Debugf("Removed route %v", route)
 	}
 
-	if removed > 0 {
-		logging.Infof("Removed %d managed routes", removed)
+	if len(failedRoutes) > 0 {
+		return removed, fmt.Errorf("failed to remove %d routes: %v", len(failedRoutes), failedRoutes)
 	}
 
 	return removed, nil

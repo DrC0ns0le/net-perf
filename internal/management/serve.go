@@ -8,13 +8,13 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/DrC0ns0le/net-perf/pkg/logging"
+	"github.com/DrC0ns0le/net-perf/internal/system"
 	pb "github.com/DrC0ns0le/net-perf/pkg/pb/management"
 )
 
 var managementRPCPort = flag.Int("management.rpcport", 5122, "port for management rpc server")
 
-func Serve() {
+func Serve(global *system.Node) {
 
 	// start gRPC server
 	listener, err := net.Listen("tcp", ":"+strconv.Itoa(*managementRPCPort))
@@ -26,8 +26,8 @@ func Serve() {
 	s := grpc.NewServer()
 	pb.RegisterManagementServer(s, &managementServer{})
 
-	logging.Infof("Management gRPC server listening at %v", listener.Addr())
+	global.Logger.Infof("management gRPC server listening at %v", listener.Addr())
 	if err := s.Serve(listener); err != nil {
-		logging.Errorf("failed to serve management gRPC server: %v", err)
+		global.Logger.Errorf("failed to serve management gRPC server: %v", err)
 	}
 }

@@ -24,7 +24,8 @@ type linkWatchdog struct {
 
 	started bool
 	localID int
-	// logger  *logging.Logger
+
+	Logger logging.Logger
 }
 
 var (
@@ -32,7 +33,7 @@ var (
 )
 
 func (w *linkWatchdog) Start() {
-	logging.Infof("Starting link watchdog service")
+	w.Logger.Infof("starting link watchdog service")
 	ticker := time.NewTicker(*linkUpdateInterval)
 	defer ticker.Stop()
 
@@ -43,7 +44,7 @@ func (w *linkWatchdog) Start() {
 			go func() {
 				updated, err := w.manageLink()
 				if err != nil {
-					logging.Errorf("failed to update routes: %v", err)
+					w.Logger.Errorf("failed to update routes: %v", err)
 				}
 
 				if updated {
@@ -54,7 +55,7 @@ func (w *linkWatchdog) Start() {
 			go func() {
 				err := w.addLink(iface.Name)
 				if err != nil {
-					logging.Errorf("failed to handle new interface: %v", err)
+					w.Logger.Errorf("failed to handle new interface: %v", err)
 				}
 			}()
 
@@ -100,11 +101,11 @@ func (w *linkWatchdog) manageLink() (bool, error) {
 				var netErr *net.OpError
 				switch {
 				case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr):
-					logging.Errorf("timed out getting preferred interface version for %d, assuming v4", rID)
+					w.Logger.Errorf("timed out getting preferred interface version for %d, assuming v4", rID)
 					version = "4"
 				case errors.Is(err, metrics.ErrNoPaths):
 					// means prometheus has no metrics
-					logging.Infof("neither v4 nor v6 are preferred for %d, assuming v4", rID)
+					w.Logger.Infof("neither v4 nor v6 are preferred for %d, assuming v4", rID)
 					version = "4"
 				default:
 					return false, fmt.Errorf("failed to get preferred interface version: %v", err)
@@ -115,7 +116,7 @@ func (w *linkWatchdog) manageLink() (bool, error) {
 				version = "4"
 				w.started = true
 			} else if version == "" {
-				logging.Infof("neither v4 nor v6 are preferred for %s, skipping", remote)
+				w.Logger.Infof("neither v4 nor v6 are preferred for %s, skipping", remote)
 				continue
 			}
 		} else {
@@ -128,23 +129,23 @@ func (w *linkWatchdog) manageLink() (bool, error) {
 		iface := netctl.GetOutgoingWGInterface(remote)
 
 		if iface == "" {
-			logging.Errorf("warning: route for %s is unexpectedly not found in the routing table, adding route via %s", remote, preferredInterface)
+			w.Logger.Errorf("warning: route for %s is unexpectedly not found in the routing table, adding route via %s", remote, preferredInterface)
 			err := w.addWGLinkRoutes(preferredInterface)
 			if err != nil {
 				return false, fmt.Errorf("failed to add route for %s: %v", remote, err)
 			}
 			err = tunables.ConfigureInterface(preferredInterface)
 			if err != nil {
-				logging.Errorf("Error configuring sysctls for %s: %v\n", preferredInterface, err)
+				w.Logger.Errorf("error configuring sysctls for %s: %v\n", preferredInterface, err)
 			}
 		} else if iface != preferredInterface {
-			logging.Infof("changing route for %s from %s to %s", remote, iface, preferredInterface)
+			w.Logger.Infof("changing route for %s from %s to %s", remote, iface, preferredInterface)
 			err := w.changeWGLinkRoutes(preferredInterface)
 			if err != nil {
 				return false, fmt.Errorf("failed to change route for %s: %v", remote, err)
 			}
 		} else {
-			logging.Debugf("Route for %s already set to preferred interface %s", remote, iface)
+			w.Logger.Debugf("Route for %s already set to preferred interface %s", remote, iface)
 		}
 	}
 
@@ -155,7 +156,7 @@ func (w *linkWatchdog) addLink(iface string) error {
 
 	err := tunables.ConfigureInterface(iface)
 	if err != nil {
-		logging.Errorf("Error configuring sysctls for %s: %v\n", iface, err)
+		w.Logger.Errorf("error configuring sysctls for %s: %v\n", iface, err)
 	}
 
 	wgIface, err := netctl.ParseWGInterface(iface)
@@ -177,7 +178,7 @@ func (w *linkWatchdog) addLink(iface string) error {
 
 func (w *linkWatchdog) addRoutes(remoteID int) error {
 
-	logging.Debugf("adding route for %d", remoteID)
+	w.Logger.Debugf("adding route for %d", remoteID)
 
 	iface := "wg" + strconv.Itoa(w.localID) + "." + strconv.Itoa(remoteID) + "_v"
 	version := "4"
@@ -190,9 +191,9 @@ func (w *linkWatchdog) addRoutes(remoteID int) error {
 		var netErr *net.OpError
 		switch {
 		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr):
-			logging.Debugf("timed out getting preferred interface version for %d, assuming v4", remoteID)
+			w.Logger.Debugf("timed out getting preferred interface version for %d, assuming v4", remoteID)
 		case errors.Is(err, metrics.ErrNoPaths):
-			logging.Debugf("neither v4 nor v6 are preferred for %d, assuming v4", remoteID)
+			w.Logger.Debugf("neither v4 nor v6 are preferred for %d, assuming v4", remoteID)
 		default:
 			return fmt.Errorf("failed to get preferred interface version: %v", err)
 		}
