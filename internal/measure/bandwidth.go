@@ -48,11 +48,16 @@ func startBandwidthWorker(worker *Worker) {
 	randSleep := time.Duration(float64(50*time.Second) * (float64(h) / (1 << 64)))
 	time.Sleep(randSleep)
 
-	test := &bandwidth.Client{
-		SourceIP: net.ParseIP(worker.sourceIP),
-		TargetIP: net.ParseIP(worker.targetIP),
-		Logger:   worker.logger,
-	}
+	var (
+		data bandwidth.Result
+		err  error
+
+		test = &bandwidth.Client{
+			SourceIP: net.ParseIP(worker.sourceIP),
+			TargetIP: net.ParseIP(worker.targetIP),
+			Logger:   worker.logger,
+		}
+	)
 
 	worker.logger.Debugf("Starting bandwidth measurement on %s\n", worker.iface.Name)
 	ticker := time.NewTicker(60 * time.Second)
@@ -65,7 +70,7 @@ func startBandwidthWorker(worker *Worker) {
 
 			go func() {
 				// measure
-				data, err := test.MeasureUDP(ctx)
+				data, err = test.MeasureUDP(ctx)
 				if err != nil {
 					worker.logger.Errorf("error measuring UDP bandwidth: %v", err)
 				}
@@ -77,8 +82,11 @@ func startBandwidthWorker(worker *Worker) {
 		case <-worker.stopCh:
 			worker.logger.Infof("stopping bandwidth measurement on %s", worker.iface.Name)
 
-			// Set metrics to NaN
-			generateBandwidthMetrics(bandwidth.Result{}, worker.iface)
+			// remove worker metrics
+			err = unregisterBandwidthMetrics(data, worker.iface)
+			if err != nil {
+				worker.logger.Errorf("error unregistering bandwidth metrics: %v", err)
+			}
 			return
 		}
 	}
@@ -160,5 +168,35 @@ func generateBandwidthMetrics(data bandwidth.Result, iface netctl.WGInterface) {
 		strconv.Itoa(data.TargetDuration),
 		pathName,
 	).Set(outOfOrder)
+}
 
+func unregisterBandwidthMetrics(data bandwidth.Result, iface netctl.WGInterface) error {
+	pathName := generatePathName(iface.LocalID, iface.RemoteID)
+
+	metrics := []*prometheus.GaugeVec{
+		bandwidthStatus,
+		bandwidthJitter,
+		bandwidthPacketLoss,
+		bandwidthResult,
+		bandwidthOutOfOrder,
+	}
+
+	for _, metric := range metrics {
+		ok := metric.DeleteLabelValues(
+			data.Protocol,
+			iface.LocalID,
+			iface.RemoteID,
+			iface.IPVersion,
+			strconv.Itoa(data.TargetBandwidth),
+			strconv.Itoa(data.PacketSize),
+			strconv.Itoa(data.TargetDuration),
+			pathName,
+		)
+
+		if !ok {
+			fmt.Errorf("failed to delete bandwidth metrics")
+		}
+	}
+
+	return nil
 }

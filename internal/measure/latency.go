@@ -81,15 +81,11 @@ func startLatencyWorker(worker *Worker) {
 		case <-worker.stopCh:
 			worker.logger.Info("stopping latency measurement")
 
-			// Set metrics to NaN
-			generateLatencyMetrics(latency.Result{
-				Protocol: "tcp",
-				Status:   0,
-			}, worker.iface)
-			generateLatencyMetrics(latency.Result{
-				Protocol: "icmp",
-				Status:   0,
-			}, worker.iface)
+			// remove worker metrics
+			err := unregisterLatencyMetrics(worker.iface)
+			if err != nil {
+				worker.logger.Errorf("error unregistering latency metrics: %v", err)
+			}
 
 			return
 		}
@@ -143,4 +139,33 @@ func generateLatencyMetrics(data latency.Result, iface netctl.WGInterface) {
 		iface.IPVersion,
 		pathName,
 	).Set(jitter)
+}
+
+func unregisterLatencyMetrics(iface netctl.WGInterface) error {
+	pathName := generatePathName(iface.LocalID, iface.RemoteID)
+
+	metrics := []*prometheus.GaugeVec{
+		latencyStatus,
+		latencyLoss,
+		latencyDuration,
+		latencyJitter,
+	}
+
+	for _, metric := range metrics {
+		for _, protocol := range []string{"tcp", "icmp"} {
+			ok := metric.DeleteLabelValues(
+				protocol,
+				iface.LocalID,
+				iface.RemoteID,
+				iface.IPVersion,
+				pathName,
+			)
+
+			if !ok {
+				fmt.Errorf("failed to delete latency metrics")
+			}
+		}
+	}
+
+	return nil
 }
