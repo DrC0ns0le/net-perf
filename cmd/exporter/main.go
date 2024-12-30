@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/route/finder"
@@ -117,15 +118,18 @@ type Route struct {
 }
 
 type RouteRecord struct {
-	Timestamp    time.Time `json:"@timestamp"`
-	Source       int       `json:"source"`
-	Destination  int       `json:"destination"`
-	BGPPath      []int     `json:"bgp_path"`
-	DijkstraPath []int     `json:"dijkstra_path"`
-	HopCount     int       `json:"hop_count"`
-	IsOptimal    bool      `json:"is_optimal"`
-	RouteChanged bool      `json:"route_changed"`
-	LastBGPPath  []int     `json:"last_bgp_path,omitempty"`
+	Timestamp       time.Time `json:"@timestamp"`
+	Source          int       `json:"source"`
+	Destination     int       `json:"destination"`
+	BGPPath         []int     `json:"bgp_path"`
+	DijkstraPath    []int     `json:"dijkstra_path"`
+	HopCount        int       `json:"hop_count"`
+	IsOptimal       bool      `json:"is_optimal"`
+	RouteChanged    bool      `json:"route_changed"`
+	LastBGPPath     []int     `json:"last_bgp_path,omitempty"`
+	BGPPathStr      string    `json:"bgp_path_str"`
+	DijkstraPathStr string    `json:"dijkstra_path_str"`
+	LastBGPPathStr  string    `json:"last_bgp_path_str,omitempty"`
 }
 
 func initializeCacheFromES(esClient *elasticsearch.Client) (map[string][]int, error) {
@@ -286,15 +290,18 @@ func tracePath(routeMap map[int]map[int]int, esClient *elasticsearch.Client, pre
 
 			// Create historical record
 			record := RouteRecord{
-				Timestamp:    time.Now(),
-				Source:       source,
-				Destination:  route.Dest,
-				BGPPath:      route.Via,
-				DijkstraPath: dijkstraPath[1:],
-				HopCount:     len(route.Via),
-				IsOptimal:    reflect.DeepEqual(route.Via, dijkstraPath[1:]),
-				RouteChanged: routeChanged,
-				LastBGPPath:  lastPath,
+				Timestamp:       time.Now(),
+				Source:          source,
+				Destination:     route.Dest,
+				BGPPath:         route.Via,
+				DijkstraPath:    dijkstraPath[1:],
+				HopCount:        len(route.Via),
+				IsOptimal:       reflect.DeepEqual(route.Via, dijkstraPath[1:]),
+				RouteChanged:    routeChanged,
+				LastBGPPath:     lastPath,
+				BGPPathStr:      pathToString(route.Via),
+				DijkstraPathStr: pathToString(dijkstraPath[1:]),
+				LastBGPPathStr:  pathToString(lastPath),
 			}
 
 			routeHistory = append(routeHistory, record)
@@ -352,4 +359,12 @@ func tracePath(routeMap map[int]map[int]int, esClient *elasticsearch.Client, pre
 	}
 
 	return nil
+}
+
+func pathToString(path []int) string {
+	strPath := make([]string, len(path))
+	for i, as := range path {
+		strPath[i] = fmt.Sprintf("%d", as)
+	}
+	return strings.Join(strPath, " -> ")
 }

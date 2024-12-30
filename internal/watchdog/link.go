@@ -229,7 +229,7 @@ func (w *linkWatchdog) addWGLinkRoutes(iface string) error {
 		return fmt.Errorf("error parsing IPv4 CIDR: %w", err)
 	}
 
-	src4 := net.ParseIP(fmt.Sprintf("10.201.%d.1", remoteID))
+	src4 := net.ParseIP(fmt.Sprintf("10.201.%d.1", w.localID))
 	if src4 == nil {
 		return fmt.Errorf("error parsing IPv4 source address")
 	}
@@ -289,7 +289,7 @@ func (w *linkWatchdog) changeWGLinkRoutes(iface string) error {
 		return fmt.Errorf("error parsing IPv4 CIDR: %w", err)
 	}
 
-	src4 := net.ParseIP(fmt.Sprintf("10.201.%d.1", remoteID))
+	src4 := net.ParseIP(fmt.Sprintf("10.201.%d.1", w.localID))
 	if src4 == nil {
 		return fmt.Errorf("error parsing IPv4 source address")
 	}
