@@ -7,10 +7,9 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/DrC0ns0le/net-perf/internal/management"
 	"github.com/DrC0ns0le/net-perf/internal/measure"
 	"github.com/DrC0ns0le/net-perf/internal/measure/bandwidth"
-	"github.com/DrC0ns0le/net-perf/internal/metrics"
+	"github.com/DrC0ns0le/net-perf/internal/nexus"
 	"github.com/DrC0ns0le/net-perf/internal/route"
 	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
@@ -59,8 +58,8 @@ func main() {
 		node.Logger.Fatalf("failed to convert local id to int: %v", err)
 	}
 
-	// start metrics server
-	go metrics.Serve(node)
+	// start nexus servers
+	go nexus.Serve(node)
 
 	// start bandwidth measurement server
 	go bandwidth.Serve(node)
@@ -70,9 +69,6 @@ func main() {
 
 	// route management
 	go route.Start(node)
-
-	// start management rpc server
-	go management.Serve(node)
 
 	// start watchdog
 	go watchdog.Start(node)

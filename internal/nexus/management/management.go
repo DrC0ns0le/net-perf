@@ -8,11 +8,11 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-type managementServer struct {
+type Server struct {
 	pb.UnimplementedManagementServer
 }
 
-func (s *managementServer) GetRouteTable(ctx context.Context, req *pb.GetRouteTableRequest) (*pb.GetRouteTableResponse, error) {
+func (s *Server) GetRouteTable(ctx context.Context, req *pb.GetRouteTableRequest) (*pb.GetRouteTableResponse, error) {
 	routes, err := netctl.ListManagedRoutes()
 	if err != nil {
 		return nil, err

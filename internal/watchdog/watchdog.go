@@ -31,11 +31,6 @@ func Start(global *system.Node) {
 		},
 	}
 
-	err := Serve(global)
-	if err != nil {
-		global.Logger.Errorf("failed to start watchdog socket: %v", err)
-	}
-
 	// link watchdog
 	go w.link.Start()
 

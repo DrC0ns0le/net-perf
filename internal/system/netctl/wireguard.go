@@ -226,6 +226,9 @@ func DstWGInterfaceExists(dst int) bool {
 		return false
 	}
 
+	if len(wgIfs) == 0 {
+		return true // workaround for local testing/client/exporter
+	}
 	for _, iface := range wgIfs {
 		if iface.RemoteID == strconv.Itoa(dst) {
 			return true

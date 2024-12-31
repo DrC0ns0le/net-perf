@@ -94,7 +94,7 @@ func SetPathCost(ctx context.Context, src, dst int) (float64, error) {
 	}
 
 	// Check if dst wg interface exists, if not return infinity
-	if !netctl.DstWGInterfaceExists(dst) {
+	if !netctl.DstWGInterfaceExists(dst - 64512) {
 		return math.Inf(1), nil
 	}
 

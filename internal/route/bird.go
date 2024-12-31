@@ -140,16 +140,29 @@ func (b *Bird) UpdateRoutes(ctx context.Context, routes []bird.Route, mode strin
 			continue
 		}
 		var chosenPathIndex int
+		var shortestPathIndex int
 		minCost := math.Inf(1)
+		minASLen := math.MaxInt
 		for i, path := range route.Paths {
+			// as fallback, choose the shortest path
+			if len(path.ASPath) < minASLen {
+				minASLen = len(path.ASPath)
+				shortestPathIndex = i
+			}
+
 			totalCost, err := CalculateTotalCost(ctx, b.Config, path.ASPath)
 			if err != nil {
-				return fmt.Errorf("error calculating total cost: %w", err)
+				b.Logger.Errorf("error calculating total cost for path %v: %v", path, err)
+				continue
 			}
 			if totalCost < minCost {
 				minCost = totalCost
 				chosenPathIndex = i
 			}
+		}
+
+		if minCost == math.Inf(1) {
+			chosenPathIndex = shortestPathIndex
 		}
 
 		if len(route.Paths[chosenPathIndex].ASPath) == 0 || route.Paths[chosenPathIndex].ASPath[0] == b.Config.ASNumber {

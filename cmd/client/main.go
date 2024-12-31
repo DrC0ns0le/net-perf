@@ -151,6 +151,10 @@ func tracePath(routeMap map[int]map[int]int) {
 		log.Fatal(err)
 	}
 
+	fmt.Println("Network Topology:")
+	fmt.Println("---------------")
+	fmt.Println(graph.String())
+
 	// Print routing table
 	fmt.Println("\nRouting Table:")
 	fmt.Println("-------------")

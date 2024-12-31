@@ -22,7 +22,6 @@ type routeWatchdog struct {
 
 	RouteTable *system.RouteTable
 	RTCache    map[string]hash.Hash64
-	needUpdate bool
 
 	Logger logging.Logger
 }
@@ -43,23 +42,24 @@ func (w *routeWatchdog) Start() {
 			return
 		case <-ticker.C:
 			w.RouteTable.Lock()
-			w.checkSystemRTAlignment()
-			w.checkBirdChanges()
+			needUpdate := w.checkSystemRTAlignment() || w.checkBirdChanges()
 			w.RouteTable.Unlock()
 
-			if w.needUpdate {
-				w.needUpdate = false
+			// only update if there is a change
+			if needUpdate {
+				needUpdate = false
+				// signal must be sent after routetable mutex is unlocked to prevent deadlock as route run will try to acquire the lock
 				w.RTUpdateCh <- struct{}{}
 			}
 		}
 	}
 }
 
-func (w *routeWatchdog) checkSystemRTAlignment() {
+func (w *routeWatchdog) checkSystemRTAlignment() bool {
 	systemRoutes, err := netctl.ListManagedRoutes()
 	if err != nil {
 		w.Logger.Errorf("failed to list managed routes: %v", err)
-		return
+		return false
 	}
 
 	managedRoutes := make(map[string]struct{})
@@ -73,12 +73,15 @@ func (w *routeWatchdog) checkSystemRTAlignment() {
 		if _, exists := managedRoutes[key]; !exists {
 			w.Logger.Errorf("missing system route %s via %s",
 				route.Destination, route.Gateway)
-			w.needUpdate = true
+			return true
 		}
 	}
+
+	return false
 }
 
-func (w *routeWatchdog) checkBirdChanges() {
+func (w *routeWatchdog) checkBirdChanges() bool {
+	needUpdate := false
 	for _, mode := range []string{"v4", "v6"} {
 		_, hash, err := bird.GetRoutes(mode)
 		if err != nil {
@@ -89,8 +92,13 @@ func (w *routeWatchdog) checkBirdChanges() {
 			w.RTCache[mode] = hash
 		} else if w.RTCache[mode].Sum64() != hash.Sum64() {
 			w.RTCache[mode] = hash
-			w.Logger.Infof("bird %s route table changed", mode)
-			w.needUpdate = true
+			needUpdate = true
 		}
 	}
+
+	if needUpdate {
+		w.Logger.Infof("bird routes changed")
+	}
+
+	return needUpdate
 }

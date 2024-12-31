@@ -66,6 +66,10 @@ func NewGraph(ctx context.Context) (*Graph, error) {
 	return g, nil
 }
 
+func (g *Graph) String() string {
+	return fmt.Sprintf("Graph:\nSize: %d\nMatrix: %v\n", g.size, g.matrix)
+}
+
 // Dijkstra implements Dijkstra's shortest path algorithm using a priority queue
 func (g *Graph) Dijkstra(start int) []float64 {
 	dist := make([]float64, g.size)
