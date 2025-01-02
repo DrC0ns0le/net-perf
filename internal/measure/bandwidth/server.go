@@ -46,7 +46,7 @@ func Serve(global *system.Node) {
 	for _, addr := range localAddrs {
 		runningServers = append(runningServers, &Server{
 			localAddr: fmt.Sprintf("%s:%d", addr, *bandwidthPort),
-			stopCh:    make(chan struct{}),
+			stopCh:    global.StopCh,
 			clients:   make(map[string]chan Packet),
 			logger:    global.Logger.With("component", "server", "listener", fmt.Sprintf("%s:%d", addr, *bandwidthPort)),
 		})
@@ -139,7 +139,12 @@ func (s *Server) clientWorker(receiveChan chan Packet) {
 			s.mu.Unlock()
 			return
 		case packet := <-receiveChan:
+			// process packet and update stats
+			stats.LastUpdate = time.Now()
+
+			// check if test is already ongoing
 			if stats.TotalPackets > 0 {
+				// check if packet is out of order
 				if packet.SequenceNumber > stats.HighestSeq {
 					stats.HighestSeq = packet.SequenceNumber
 				} else {
@@ -161,16 +166,16 @@ func (s *Server) clientWorker(receiveChan chan Packet) {
 					stats.MaxJitter = jitter
 				}
 			} else {
-				stats.StartTime = time.Now()
-				stats.LastUpdate = stats.StartTime
+				// first packet
+				stats.StartTime = stats.LastUpdate
 				stats.ClientAddr = packet.SourceAddr
 				stats.TotalPackets = 1
 				stats.AverageJitter = 0
 				stats.JitterVariance = 0
 			}
 
-			stats.LastUpdate = time.Now()
-
+			// TODO: better test control message
+			// end of test
 			if packet.Timestamp == 101 {
 				s.sendAcknowledgment(stats.ClientAddr)
 				s.sendFinalStats(stats)

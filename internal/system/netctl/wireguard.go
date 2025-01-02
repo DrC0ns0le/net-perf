@@ -148,8 +148,6 @@ func GetAllWGInterfaces() ([]WGInterface, error) {
 
 func GetLocalID() (string, error) {
 
-	wgPattern := regexp.MustCompile(`^wg(\d+)\.(\d+)_v(\d+)$`)
-
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		fmt.Printf("Error getting interfaces: %v\n", err)
@@ -157,16 +155,14 @@ func GetLocalID() (string, error) {
 	}
 
 	for _, iface := range interfaces {
-		if len(iface.Name) > 2 && iface.Name[:2] == "wg" {
+		if strings.HasPrefix(iface.Name, "wg") {
 			// parse the interface name
-			matches := wgPattern.FindStringSubmatch(iface.Name)
-
-			if len(matches) != 4 {
-				fmt.Printf("Error parsing interface name: %s\n", iface.Name)
+			wgIface, err := ParseWGInterface(iface.Name)
+			if err != nil {
 				continue
 			}
 
-			return matches[1], nil
+			return wgIface.LocalID, nil
 		}
 	}
 

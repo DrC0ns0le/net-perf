@@ -12,6 +12,7 @@ import (
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"net/http/pprof"
 	_ "net/http/pprof"
 )
 
@@ -45,7 +46,13 @@ func (s *HTTPServer) Start() error {
 	}))
 	mux.Handle("GET /wg/{interface}", http.HandlerFunc(s.handleWGUpdate))
 	mux.Handle("GET /rt", http.HandlerFunc(s.handleRTUpdate))
+
 	mux.Handle(*metricsPath, promhttp.Handler())
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
 	s.server = &http.Server{
 		Addr:    s.listenAddress,
@@ -70,10 +77,11 @@ func (s *HTTPServer) handleWGUpdate(w http.ResponseWriter, r *http.Request) {
 	ifaceQuery := r.PathValue("interface")
 	iface, err := netctl.ParseWGInterface(ifaceQuery)
 	if err != nil {
-		w.Write([]byte(err.Error()))
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	s.logger.Infof("got wg update request from client %s for interface %s", r.RemoteAddr, iface.Name)
 
 	select {
 	case s.wgUpdateCh <- iface:
@@ -84,6 +92,7 @@ func (s *HTTPServer) handleWGUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *HTTPServer) handleRTUpdate(w http.ResponseWriter, r *http.Request) {
+	s.logger.Infof("got rt update request from client %s", r.RemoteAddr)
 	select {
 	case s.rtUpdateCh <- struct{}{}:
 		w.Write([]byte("OK\n"))
