@@ -118,6 +118,7 @@ func (s *Server) processPacket() {
 func (s *Server) clientWorker(receiveChan chan Packet) {
 	stats := &ClientStats{}
 
+	// send stats is also used as a heartbeat for the client
 	ticker := time.NewTicker(*bandwidthStatsInterval)
 	defer ticker.Stop()
 	timeoutTicker := time.NewTicker(*bandwidthTimeout)

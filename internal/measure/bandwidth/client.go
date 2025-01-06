@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
@@ -35,6 +36,18 @@ type client struct {
 	errorChan chan error
 	ackChan   chan struct{}
 	stopCh    chan struct{}
+
+	wg sync.WaitGroup
+}
+
+func NewMeasureClient(sourceIP, targetIP string, logger logging.Logger) *Client {
+	C := &Client{
+		SourceIP: net.ParseIP(sourceIP),
+		TargetIP: net.ParseIP(targetIP),
+		Logger:   logger,
+	}
+
+	return C
 }
 
 func (c *Client) MeasureUDP(ctx context.Context) (Result, error) {
@@ -52,7 +65,7 @@ func (c *Client) MeasureUDP(ctx context.Context) (Result, error) {
 	cl := &client{
 		conn:      conn,
 		statsChan: make(chan string),
-		errorChan: make(chan error),
+		errorChan: make(chan error, 2),
 		ackChan:   make(chan struct{}),
 		stopCh:    make(chan struct{}),
 
@@ -67,18 +80,54 @@ func (c *Client) MeasureUDP(ctx context.Context) (Result, error) {
 
 		packetsCount: (uint32(*bandwidthBandwidth) * 1000000 * uint32(bandwidthDuration.Seconds())) / (uint32(*bandwidthPacketSize) * 8),
 	}
+	defer cl.cleanup()
 
-	return cl.runTest()
+	err = cl.runTest()
+	if err != nil {
+		return cl.result, err
+	}
+
+	return cl.result, nil
 }
 
-func (c *client) runTest() (Result, error) {
-	// goroutine to receive statistics
-	go c.receiveMessage()
+func (c *client) cleanup() {
+	close(c.stopCh)
+
+	timeout := time.After(5 * *bandwidthStatsInterval)
+
+	done := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
+
+	for {
+		select {
+		case <-c.statsChan:
+		case <-c.errorChan:
+		case <-c.ackChan:
+		case <-timeout:
+			c.logger.Warnf("client cleanup timed out")
+			return
+		case <-done:
+			return
+		}
+	}
+}
+
+func (c *client) runTest() error {
+	// goroutine to receive messages from the server
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		c.receiveMessage()
+	}()
 
 	interval := *bandwidthDuration / time.Duration(c.packetsCount)
 	var seqNumber uint32
 	startTime := time.Now()
 
+	buffer := make([]byte, *bandwidthPacketSize)
 	for seqNumber = 1; seqNumber < c.packetsCount; seqNumber++ {
 		targetTime := startTime.Add(time.Duration(seqNumber) * interval)
 
@@ -86,7 +135,6 @@ func (c *client) runTest() (Result, error) {
 			SequenceNumber: seqNumber,
 			Timestamp:      time.Now().UnixNano(),
 		}
-		buffer := make([]byte, *bandwidthPacketSize)
 		binary.BigEndian.PutUint32(buffer[:4], packet.SequenceNumber)
 		binary.BigEndian.PutUint64(buffer[4:12], uint64(packet.Timestamp))
 		// fill with random data
@@ -101,7 +149,7 @@ func (c *client) runTest() (Result, error) {
 
 		select {
 		case err := <-c.errorChan:
-			return c.result, fmt.Errorf("error during test: %v", err)
+			return fmt.Errorf("error during test: %v", err)
 		default:
 			// Continue if no error
 		}
@@ -119,7 +167,7 @@ func (c *client) runTest() (Result, error) {
 
 	// Send end of test notification
 	if err := c.sendEndOfTest(seqNumber); err != nil {
-		return c.result, fmt.Errorf("error sending end of test to %s: %v", c.conn.RemoteAddr().String(), err)
+		return fmt.Errorf("error sending end of test to %s: %v", c.conn.RemoteAddr().String(), err)
 	}
 
 	// Wait for final statistics
@@ -127,13 +175,13 @@ func (c *client) runTest() (Result, error) {
 	case finalStats := <-c.statsChan:
 		err := c.parseStats(finalStats)
 		if err != nil {
-			return c.result, fmt.Errorf("error parsing final stats from %s: %v", c.conn.RemoteAddr().String(), err)
+			return fmt.Errorf("error parsing final stats from %s: %v", c.conn.RemoteAddr().String(), err)
 		}
 		c.logger.Debugf("Final stats from server: %+v", c.result)
 	case err := <-c.errorChan:
-		return c.result, fmt.Errorf("error receiving final stats from %s: %v", c.conn.RemoteAddr().String(), err)
+		return fmt.Errorf("error receiving final stats from %s: %v", c.conn.RemoteAddr().String(), err)
 	case <-time.After(10 * time.Second):
-		return c.result, fmt.Errorf("timeout waiting for final stats from %s", c.conn.RemoteAddr().String())
+		return fmt.Errorf("timeout waiting for final stats from %s", c.conn.RemoteAddr().String())
 	}
 
 	// Print client-side summary
@@ -143,7 +191,7 @@ func (c *client) runTest() (Result, error) {
 	c.logger.Debugf("Target bandwidth: %d Mbps", c.result.TargetBandwidth)
 	c.logger.Debugf("Actual bandwidth: %d Mbps", c.result.Bandwidth)
 
-	return c.result, nil
+	return nil
 }
 
 func (c *client) sendEndOfTest(seqNumber uint32) error {
@@ -180,6 +228,17 @@ func (c *client) sendEndOfTest(seqNumber uint32) error {
 func (c *client) receiveMessage() {
 	buffer := make([]byte, 1024)
 	for {
+		select {
+		case <-c.stopCh:
+			return
+		default:
+		}
+
+		err := c.conn.SetReadDeadline(time.Now().Add(*bandwidthStatsInterval * 2))
+		if err != nil {
+			c.errorChan <- fmt.Errorf("error setting read deadline: %v", err)
+			return
+		}
 		n, err := c.conn.Read(buffer)
 		if err != nil {
 			c.errorChan <- fmt.Errorf("error receiving message from %s: %v", c.conn.RemoteAddr().String(), err)
@@ -202,6 +261,7 @@ func (c *client) receiveMessage() {
 			c.errorChan <- fmt.Errorf("unknown message type from %s: %s", c.conn.RemoteAddr().String(), parts[0])
 		}
 	}
+
 }
 
 func (c *client) parseStats(statString string) error {

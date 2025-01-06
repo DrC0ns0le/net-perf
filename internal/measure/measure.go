@@ -60,7 +60,7 @@ func Start(global *system.Node) {
 
 		for _, iface := range ifaces {
 			if _, ok := workerMap[iface.Name]; !ok {
-				global.Logger.Debugf("found new WG interface: %s", iface.Name)
+				global.Logger.Infof("found new WG interface: %s", iface.Name)
 				worker := &Worker{
 					iface:      iface,
 					stopCh:     make(chan struct{}),

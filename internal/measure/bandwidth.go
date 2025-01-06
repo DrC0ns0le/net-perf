@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net"
 	"strconv"
 	"time"
 
@@ -52,14 +51,10 @@ func startBandwidthWorker(worker *Worker) {
 		data bandwidth.Result
 		err  error
 
-		test = &bandwidth.Client{
-			SourceIP: net.ParseIP(worker.sourceIP),
-			TargetIP: net.ParseIP(worker.targetIP),
-			Logger:   worker.logger,
-		}
+		test = bandwidth.NewMeasureClient(worker.sourceIP, worker.targetIP, worker.logger)
 	)
 
-	worker.logger.Debugf("Starting bandwidth measurement on %s\n", worker.iface.Name)
+	worker.logger.Debugf("starting bandwidth measurement on %s\n", worker.iface.Name)
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 	for {

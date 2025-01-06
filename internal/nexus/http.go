@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"net/http/pprof"
-	_ "net/http/pprof"
 )
 
 var (
