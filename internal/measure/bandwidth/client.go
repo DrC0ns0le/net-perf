@@ -34,7 +34,6 @@ type client struct {
 
 	statsChan chan string
 	errorChan chan error
-	ackChan   chan struct{}
 	stopCh    chan struct{}
 
 	wg sync.WaitGroup
@@ -66,7 +65,6 @@ func (c *Client) MeasureUDP(ctx context.Context) (Result, error) {
 		conn:      conn,
 		statsChan: make(chan string),
 		errorChan: make(chan error, 2),
-		ackChan:   make(chan struct{}),
 		stopCh:    make(chan struct{}),
 
 		logger: c.Logger,
@@ -93,7 +91,8 @@ func (c *Client) MeasureUDP(ctx context.Context) (Result, error) {
 func (c *client) cleanup() {
 	close(c.stopCh)
 
-	timeout := time.After(5 * *bandwidthStatsInterval)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
 	done := make(chan struct{})
 	go func() {
@@ -101,20 +100,22 @@ func (c *client) cleanup() {
 		close(done)
 	}()
 
-	for {
-		select {
-		case <-c.statsChan:
-		case <-c.errorChan:
-		case <-c.ackChan:
-		case <-timeout:
-			c.logger.Warnf("client cleanup timed out")
-			return
-		case <-done:
-			return
-		}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		c.logger.Warnf("cleanup timed out, some goroutines may not have finished")
 	}
+
+	close(c.statsChan)
+	close(c.errorChan)
 }
 
+// runTest runs the test, sending packets to the server and receiving stats.
+// It starts a goroutine to receive messages from the server and will return an error
+// if any error is received from the server. It also sends an end of test notification
+// once all packets have been sent and waits for the final stats from the server.
+// If no final stats are received within a certain time, it will retry up to
+// bandwidthMaxRetries times. If all retries fail, it will return an error.
 func (c *client) runTest() error {
 	// goroutine to receive messages from the server
 	c.wg.Add(1)
@@ -165,23 +166,34 @@ func (c *client) runTest() error {
 
 	c.logger.Debugf("Test completed, client took %v seconds. Sent %d packets", c.result.Duration, seqNumber)
 
-	// Send end of test notification
-	if err := c.sendEndOfTest(seqNumber); err != nil {
-		return fmt.Errorf("error sending end of test to %s: %v", c.conn.RemoteAddr().String(), err)
-	}
+	var err error
 
-	// Wait for final statistics
-	select {
-	case finalStats := <-c.statsChan:
-		err := c.parseStats(finalStats)
-		if err != nil {
-			return fmt.Errorf("error parsing final stats from %s: %v", c.conn.RemoteAddr().String(), err)
+retryLoop:
+	// Wait for final stats
+	for retry := 0; retry < *bandwidthMaxRetries; retry++ {
+		// Send end of test notification
+		if err = c.sendEndOfTest(); err != nil {
+			return fmt.Errorf("error sending end of test to %s: %v", c.conn.RemoteAddr().String(), err)
 		}
-		c.logger.Debugf("Final stats from server: %+v", c.result)
-	case err := <-c.errorChan:
-		return fmt.Errorf("error receiving final stats from %s: %v", c.conn.RemoteAddr().String(), err)
-	case <-time.After(10 * time.Second):
-		return fmt.Errorf("timeout waiting for final stats from %s", c.conn.RemoteAddr().String())
+		// Wait for final stats
+		select {
+		case finalStats := <-c.statsChan:
+			err = c.parseStats(finalStats)
+			if err != nil {
+				return fmt.Errorf("error parsing final stats from %s: %v", c.conn.RemoteAddr().String(), err)
+			}
+			break retryLoop
+		case err = <-c.errorChan:
+		case <-time.After(*bandwidthRetryDelay):
+			c.logger.Debugf("no acknowledgment received from %s (attempt %d), retrying...", c.conn.RemoteAddr().String(), retry+1)
+		}
+
+		if retry == *bandwidthMaxRetries-1 {
+			if err != nil {
+				return fmt.Errorf("failed to complete test with %s after %d attempts: %v", c.conn.RemoteAddr().String(), *bandwidthMaxRetries, err)
+			}
+			return fmt.Errorf("failed to complete test with %s after %d attempts", c.conn.RemoteAddr().String(), *bandwidthMaxRetries)
+		}
 	}
 
 	// Print client-side summary
@@ -194,35 +206,21 @@ func (c *client) runTest() error {
 	return nil
 }
 
-func (c *client) sendEndOfTest(seqNumber uint32) error {
+func (c *client) sendEndOfTest() error {
 	endPacket := Packet{
-		SequenceNumber: seqNumber,
-		// Timestamp:      int64(binary.BigEndian.Uint64(padToEight("TESTEND"))),
-		Timestamp: 101,
+		SequenceNumber: math.MaxUint32,
+		Timestamp:      math.MaxInt64,
 	}
 	buffer := make([]byte, *bandwidthPacketSize) // Use the same packet size as in the test
 	binary.BigEndian.PutUint32(buffer[:4], endPacket.SequenceNumber)
 	binary.BigEndian.PutUint64(buffer[4:12], uint64(endPacket.Timestamp))
 
-	for retry := 0; retry < *bandwidthMaxRetries; retry++ {
-		_, err := c.conn.Write(buffer)
-		if err != nil {
-			c.logger.Errorf("error sending end packet to %s (attempt %d): %v", c.conn.RemoteAddr().String(), retry+1, err)
-		} else {
-			c.logger.Debugf("Sent end of test notification (attempt %d)", retry+1)
-		}
-
-		// Wait for acknowledgment
-		select {
-		case <-c.ackChan:
-			c.logger.Debugf("Received acknowledgment from server")
-			return nil
-		case <-time.After(*bandwidthRetryDelay):
-			c.logger.Debugf("No acknowledgment received from %s (attempt %d), retrying...", c.conn.RemoteAddr().String(), retry+1)
-		}
+	_, err := c.conn.Write(buffer)
+	if err != nil {
+		return err
 	}
 
-	return fmt.Errorf("failed to receive acknowledgment from %s after %d attempts", c.conn.RemoteAddr().String(), *bandwidthMaxRetries)
+	return nil
 }
 
 func (c *client) receiveMessage() {
@@ -234,7 +232,9 @@ func (c *client) receiveMessage() {
 		default:
 		}
 
-		err := c.conn.SetReadDeadline(time.Now().Add(*bandwidthStatsInterval * 2))
+		// Set read deadline to 3x the stats interval
+		// Acts as a heartbeat, ensuring the test is still alive
+		err := c.conn.SetReadDeadline(time.Now().Add(*bandwidthStatsInterval * 3))
 		if err != nil {
 			c.errorChan <- fmt.Errorf("error setting read deadline: %v", err)
 			return
@@ -244,21 +244,15 @@ func (c *client) receiveMessage() {
 			c.errorChan <- fmt.Errorf("error receiving message from %s: %v", c.conn.RemoteAddr().String(), err)
 			return
 		}
-		parts := strings.Split(string(buffer[:n]), "|")
-		switch parts[0] {
-		case "ACK":
-			c.ackChan <- struct{}{}
-		case "STATS":
-			err := c.parseStats(string(buffer[:n]))
-			if err != nil {
-				c.logger.Errorf("error parsing stats: %v", err)
-			} else {
-				c.logger.Debugf("Received %s interim stats: %+v", c.conn.RemoteAddr(), c.result)
-			}
-		case "FINAL":
+
+		// Parse the message
+		if strings.HasPrefix(string(buffer[:n]), "STATS") {
+			// Interim Stats/Heartbeat
+		} else if strings.HasPrefix(string(buffer[:n]), "FINAL") {
+			// Final stats
 			c.statsChan <- string(buffer[:n])
-		default:
-			c.errorChan <- fmt.Errorf("unknown message type from %s: %s", c.conn.RemoteAddr().String(), parts[0])
+		} else {
+			c.errorChan <- fmt.Errorf("unknown message type from %s: %s", c.conn.RemoteAddr().String(), string(buffer[:n]))
 		}
 	}
 

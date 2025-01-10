@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -33,9 +34,10 @@ var runningServers []*Server
 
 func Serve(global *system.Node) {
 
-	if *bandwidthBufferSize < *bandwidthPacketSize+12 {
-		*bandwidthBufferSize = *bandwidthPacketSize + 12
-		global.Logger.Warnf("configured buffer size too small, using %d bytes", *bandwidthBufferSize)
+	// validation checks for bandwidth measurement
+	err := validateFlags()
+	if err != nil {
+		global.Logger.Fatal(err)
 	}
 
 	localAddrs, err := netctl.GetLocalLoopbackIP()
@@ -118,28 +120,35 @@ func (s *Server) processPacket() {
 func (s *Server) clientWorker(receiveChan chan Packet) {
 	stats := &ClientStats{}
 
-	// send stats is also used as a heartbeat for the client
+	// Send stats is also used as a heartbeat for the client
 	ticker := time.NewTicker(*bandwidthStatsInterval)
 	defer ticker.Stop()
 	timeoutTicker := time.NewTicker(*bandwidthTimeout)
 	defer timeoutTicker.Stop()
+
+	// Main loop to process packets
+	var packet Packet
 	for {
 		select {
+		// check if stop channel is closed
 		case <-s.stopCh:
 			s.logger.Infof("stopping client worker")
 			return
+		// periodically send stats
 		case <-ticker.C:
 			if stats.TotalPackets > 0 {
 				go s.sendStats(stats)
 			}
+		// check if client has timed out, then stop and clean up
 		case <-timeoutTicker.C:
-			s.logger.Errorf("test failed due to %s timeout, received %d packets, dropped %d, out of order %d, average jitter %d, jitter variance %f",
-				stats.ClientAddr.String(), stats.TotalPackets, stats.DroppedPackets, stats.OutOfOrderPackets, stats.AverageJitter, stats.JitterVariance)
+			s.logger.Errorf("test failed due to client %s timeout after %d seconds, received %d packets, dropped %d, out of order %d, average jitter %d, jitter variance %f",
+				stats.ClientAddr.String(), *bandwidthTimeout/time.Second, stats.TotalPackets, stats.DroppedPackets, stats.OutOfOrderPackets, stats.AverageJitter, stats.JitterVariance)
 			s.mu.Lock()
 			delete(s.clients, stats.ClientAddr.String())
 			s.mu.Unlock()
 			return
-		case packet := <-receiveChan:
+		// receive packet
+		case packet = <-receiveChan:
 			// process packet and update stats
 			stats.LastUpdate = time.Now()
 
@@ -173,20 +182,50 @@ func (s *Server) clientWorker(receiveChan chan Packet) {
 				stats.TotalPackets = 1
 				stats.AverageJitter = 0
 				stats.JitterVariance = 0
+				stats.HighestSeq = packet.SequenceNumber
 			}
 
 			// TODO: better test control message
 			// end of test
-			if packet.Timestamp == 101 {
-				s.sendAcknowledgment(stats.ClientAddr)
+			if packet.Timestamp == math.MaxInt64 && packet.SequenceNumber == math.MaxUint32 {
 				s.sendFinalStats(stats)
-				s.mu.Lock()
-				delete(s.clients, stats.ClientAddr.String())
-				s.mu.Unlock()
-				return
+
+				// Set up a timer for delayed cleanup
+				cleanupTimer := time.NewTimer(2 * *bandwidthRetryDelay)
+				defer cleanupTimer.Stop()
+
+				// Wait for potential retries
+				select {
+				case <-cleanupTimer.C:
+					// Cleanup after timeout
+					s.mu.Lock()
+					delete(s.clients, stats.ClientAddr.String())
+					s.mu.Unlock()
+					return
+				case <-s.stopCh:
+					// Server is stopping, exit immediately
+					s.mu.Lock()
+					delete(s.clients, stats.ClientAddr.String())
+					s.mu.Unlock()
+					return
+				case packet := <-receiveChan:
+					// Handle potential retry
+					if packet.Timestamp == math.MaxInt64 && packet.SequenceNumber == math.MaxUint32 {
+						s.sendFinalStats(stats)
+						// Reset the timer
+						cleanupTimer.Reset(2 * *bandwidthRetryDelay)
+						if len(cleanupTimer.C) > 0 {
+							<-cleanupTimer.C
+						}
+					} else {
+						// Unexpected packet after end of test
+						s.logger.Errorf("unexpected packet received after end of test from client %s: %v", stats.ClientAddr, packet)
+					}
+				}
 			}
 
-			timeoutTicker.Reset(10 * time.Second)
+			// Reset timeout ticker
+			timeoutTicker.Reset(*bandwidthTimeout)
 			if len(timeoutTicker.C) > 0 {
 				<-timeoutTicker.C
 			}
@@ -194,18 +233,9 @@ func (s *Server) clientWorker(receiveChan chan Packet) {
 	}
 }
 
-func (s *Server) sendAcknowledgment(addr *net.UDPAddr) {
-	s.sendMessage(addr, "ACK")
-
-}
-
 func (s *Server) sendStats(stats *ClientStats) {
-	statsMsg := fmt.Sprintf("STATS|%d|%d|%d|%.3f|%d",
+	statsMsg := fmt.Sprintf("STATS|%d",
 		stats.TotalPackets,
-		stats.OutOfOrderPackets,
-		stats.DroppedPackets,
-		stats.JitterVariance,
-		stats.MaxJitter,
 	)
 	s.sendMessage(stats.ClientAddr, statsMsg)
 }
@@ -219,11 +249,7 @@ func (s *Server) sendFinalStats(stats *ClientStats) {
 		stats.MaxJitter,
 		stats.LastUpdate.UnixMicro()-stats.StartTime.UnixMicro(),
 	)
-	// send 3 times to make sure it is received
-	for i := 0; i < 3; i++ {
-		s.sendMessage(stats.ClientAddr, finalStats)
-		time.Sleep(100 * time.Millisecond)
-	}
+	s.sendMessage(stats.ClientAddr, finalStats)
 }
 
 func (s *Server) sendMessage(addr *net.UDPAddr, message string) {
