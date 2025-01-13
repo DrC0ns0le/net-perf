@@ -189,7 +189,7 @@ func unregisterBandwidthMetrics(data bandwidth.Result, iface netctl.WGInterface)
 		)
 
 		if !ok {
-			fmt.Errorf("failed to delete bandwidth metrics")
+			return fmt.Errorf("failed to delete %s bandwidth metrics for %s", data.Protocol, iface.Name)
 		}
 	}
 

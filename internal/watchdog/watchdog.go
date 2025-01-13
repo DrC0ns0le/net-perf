@@ -7,33 +7,47 @@ import (
 )
 
 type watchdog struct {
-	link  *linkWatchdog
-	route *routeWatchdog
+	watchdogComponents []watchdogComponent
+}
+
+type watchdogComponent interface {
+	Start()
+}
+
+func NewWatchdog(global *system.Node) *watchdog {
+	return &watchdog{
+		watchdogComponents: []watchdogComponent{
+			NewLinkWatchdog(global),
+			NewRouteWatchdog(global),
+		},
+	}
+}
+
+func NewLinkWatchdog(global *system.Node) watchdogComponent {
+	return &linkWatchdog{
+		stopCh:          global.StopCh,
+		wgUpdateCh:      global.WGUpdateCh,
+		rtUpdateCh:      global.RTUpdateCh,
+		measureUpdateCh: global.MeasureUpdateCh,
+		localID:         global.SiteID,
+		logger:          global.Logger.With("component", "link"),
+	}
+}
+
+func NewRouteWatchdog(global *system.Node) watchdogComponent {
+	return &routeWatchdog{
+		stopCh:     global.StopCh,
+		routeTable: global.RouteTable,
+		rtCache:    make(map[string]hash.Hash64),
+		rtUpdateCh: global.RTUpdateCh,
+		logger:     global.Logger.With("component", "route"),
+	}
 }
 
 func Start(global *system.Node) {
+	w := NewWatchdog(global)
 
-	w := &watchdog{
-		link: &linkWatchdog{
-			StopCh:          global.StopCh,
-			WGUpdateCh:      global.WGUpdateCh,
-			RTUpdateCh:      global.RTUpdateCh,
-			MeasureUpdateCh: global.MeasureUpdateCh,
-			localID:         global.SiteID,
-			Logger:          global.Logger.With("component", "link"),
-		},
-		route: &routeWatchdog{
-			StopCh:     global.StopCh,
-			RouteTable: global.RouteTable,
-			RTCache:    make(map[string]hash.Hash64),
-			RTUpdateCh: global.RTUpdateCh,
-			Logger:     global.Logger.With("component", "route"),
-		},
+	for _, c := range w.watchdogComponents {
+		go c.Start()
 	}
-
-	// link watchdog
-	go w.link.Start()
-
-	// route watchdog
-	go w.route.Start()
 }

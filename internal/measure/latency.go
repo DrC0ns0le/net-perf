@@ -162,7 +162,7 @@ func unregisterLatencyMetrics(iface netctl.WGInterface) error {
 			)
 
 			if !ok {
-				fmt.Errorf("failed to delete latency metrics")
+				return fmt.Errorf("failed to delete %s latency metrics for %s", protocol, iface.Name)
 			}
 		}
 	}

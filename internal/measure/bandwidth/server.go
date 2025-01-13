@@ -99,9 +99,14 @@ func (s *Server) processPacket() {
 			if !exists {
 				receiveChan = make(chan Packet, *bandwidthChannelBufferSize)
 				s.clients[remoteAddr.String()] = receiveChan
-				go s.clientWorker(receiveChan)
 			}
 			s.mu.Unlock()
+
+			// start client worker if it doesn't exist
+			// started outside of the lock to avoid race conditions
+			if !exists {
+				go s.clientWorker(receiveChan)
+			}
 
 			packet := Packet{SourceAddr: remoteAddr}
 			packet.SequenceNumber = binary.BigEndian.Uint32(buffer[:4])
@@ -185,8 +190,7 @@ func (s *Server) clientWorker(receiveChan chan Packet) {
 				stats.HighestSeq = packet.SequenceNumber
 			}
 
-			// TODO: better test control message
-			// end of test
+			// End of test
 			if packet.Timestamp == math.MaxInt64 && packet.SequenceNumber == math.MaxUint32 {
 				s.sendFinalStats(stats)
 

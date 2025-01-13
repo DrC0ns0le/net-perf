@@ -17,39 +17,39 @@ var (
 )
 
 type routeWatchdog struct {
-	StopCh     chan struct{}
-	RTUpdateCh chan struct{}
+	stopCh     chan struct{}
+	rtUpdateCh chan struct{}
 
-	RouteTable *system.RouteTable
-	RTCache    map[string]hash.Hash64
+	routeTable *system.RouteTable
+	rtCache    map[string]hash.Hash64
 
-	Logger logging.Logger
+	logger logging.Logger
 }
 
 func (w *routeWatchdog) Start() {
 
-	for !w.RouteTable.Ready() {
+	for !w.routeTable.Ready() {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	w.Logger.Infof("starting route watchdog service")
+	w.logger.Infof("starting route watchdog service")
 
 	ticker := time.NewTicker(*routeUpdateInterval)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-w.StopCh:
+		case <-w.stopCh:
 			return
 		case <-ticker.C:
-			w.RouteTable.Lock()
+			w.routeTable.Lock()
 			needUpdate := w.checkSystemRTAlignment() || w.checkBirdChanges()
-			w.RouteTable.Unlock()
+			w.routeTable.Unlock()
 
 			// only update if there is a change
 			if needUpdate {
 				needUpdate = false
-				// signal must be sent after routetable mutex is unlocked to prevent deadlock as route run will try to acquire the lock
-				w.RTUpdateCh <- struct{}{}
+				// signal must be sent after routeTable mutex is unlocked to prevent deadlock as route run will try to acquire the lock
+				w.rtUpdateCh <- struct{}{}
 			}
 		}
 	}
@@ -58,7 +58,7 @@ func (w *routeWatchdog) Start() {
 func (w *routeWatchdog) checkSystemRTAlignment() bool {
 	systemRoutes, err := netctl.ListManagedRoutes()
 	if err != nil {
-		w.Logger.Errorf("failed to list managed routes: %v", err)
+		w.logger.Errorf("failed to list managed routes: %v", err)
 		return false
 	}
 
@@ -68,10 +68,10 @@ func (w *routeWatchdog) checkSystemRTAlignment() bool {
 		managedRoutes[key] = struct{}{}
 	}
 
-	for _, route := range w.RouteTable.Routes {
+	for _, route := range w.routeTable.Routes {
 		key := fmt.Sprintf("%s_%v", route.Destination.String(), route.Gateway)
 		if _, exists := managedRoutes[key]; !exists {
-			w.Logger.Errorf("missing system route %s via %s",
+			w.logger.Errorf("missing system route %s via %s",
 				route.Destination, route.Gateway)
 			return true
 		}
@@ -85,19 +85,19 @@ func (w *routeWatchdog) checkBirdChanges() bool {
 	for _, mode := range []string{"v4", "v6"} {
 		_, hash, err := bird.GetRoutes(mode)
 		if err != nil {
-			w.Logger.Errorf("error getting routes: %v", err)
+			w.logger.Errorf("error getting routes: %v", err)
 		}
 
-		if _, ok := w.RTCache[mode]; !ok {
-			w.RTCache[mode] = hash
-		} else if w.RTCache[mode].Sum64() != hash.Sum64() {
-			w.RTCache[mode] = hash
+		if _, ok := w.rtCache[mode]; !ok {
+			w.rtCache[mode] = hash
+		} else if w.rtCache[mode].Sum64() != hash.Sum64() {
+			w.rtCache[mode] = hash
 			needUpdate = true
 		}
 	}
 
 	if needUpdate {
-		w.Logger.Infof("bird routes changed")
+		w.logger.Infof("bird routes changed")
 	}
 
 	return needUpdate

@@ -32,6 +32,8 @@ type Packet struct {
 	Timestamp int64
 }
 
+// ClientStats contains the statistics for a client
+// Used by the server
 type ClientStats struct {
 	// IP address of the client
 	ClientAddr *net.UDPAddr

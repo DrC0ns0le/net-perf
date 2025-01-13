@@ -88,7 +88,7 @@ func (s *SocketServer) handleConnection(conn net.Conn) {
 		}
 
 		message = strings.TrimSpace(message)
-		s.logger.Debugf("received message from socket: %s", message)
+		s.logger.Infof("received message from socket: %s", message)
 
 		if strings.HasPrefix(message, "wg") {
 			wgIface, err := netctl.ParseWGInterface(message)
