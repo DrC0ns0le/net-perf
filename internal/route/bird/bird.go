@@ -14,7 +14,7 @@ const (
 	timeout     = 10 * time.Second
 )
 
-func Begin(mode string) (net.Conn, *bufio.Reader, *bufio.Writer, error) {
+func connect(mode string) (net.Conn, *bufio.Reader, *bufio.Writer, error) {
 	conn, err := net.DialTimeout("unix", func() string {
 		if mode == "v6" {
 			return bird6Socket

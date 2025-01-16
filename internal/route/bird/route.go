@@ -28,7 +28,7 @@ type BGPPath struct {
 }
 
 func GetRoutes(mode string) ([]Route, hash.Hash64, error) {
-	conn, reader, writer, err := Begin(mode)
+	conn, reader, writer, err := connect(mode)
 	if err != nil {
 		return nil, nil, err
 	}

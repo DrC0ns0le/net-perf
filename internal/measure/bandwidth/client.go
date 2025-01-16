@@ -59,12 +59,11 @@ func (c *Client) MeasureUDP(ctx context.Context) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	defer conn.Close()
 
 	cl := &client{
 		conn:      conn,
 		statsChan: make(chan string),
-		errorChan: make(chan error, 2),
+		errorChan: make(chan error),
 		stopCh:    make(chan struct{}),
 
 		logger: c.Logger,
@@ -89,9 +88,11 @@ func (c *Client) MeasureUDP(ctx context.Context) (Result, error) {
 }
 
 func (c *client) cleanup() {
+	c.conn.Close()
 	close(c.stopCh)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// wait for all goroutines to finish within 5x bandwidthStatsInterval
+	ctx, cancel := context.WithTimeout(context.Background(), 5**bandwidthStatsInterval)
 	defer cancel()
 
 	done := make(chan struct{})
@@ -100,14 +101,23 @@ func (c *client) cleanup() {
 		close(done)
 	}()
 
-	select {
-	case <-done:
-	case <-ctx.Done():
-		c.logger.Warnf("cleanup timed out, some goroutines may not have finished")
+	// Drain channels while waiting for goroutines to finish or timeout
+drainLoop:
+	for {
+		select {
+		case <-done:
+			break drainLoop
+		case <-ctx.Done():
+			c.logger.Warnf("cleanup timed out, some goroutines may not have finished")
+			break drainLoop
+		case <-c.statsChan:
+		case <-c.errorChan:
+		}
 	}
 
 	close(c.statsChan)
 	close(c.errorChan)
+
 }
 
 // runTest runs the test, sending packets to the server and receiving stats.
@@ -253,9 +263,9 @@ func (c *client) receiveMessage() {
 			c.statsChan <- string(buffer[:n])
 		} else {
 			c.errorChan <- fmt.Errorf("unknown message type from %s: %s", c.conn.RemoteAddr().String(), string(buffer[:n]))
+			return
 		}
 	}
-
 }
 
 func (c *client) parseStats(statString string) error {
@@ -298,6 +308,9 @@ func (c *client) parseStats(statString string) error {
 			testDuration, err := strconv.Atoi(parts[6])
 			if err != nil {
 				return fmt.Errorf("error parsing duration: %v", err)
+			}
+			if testDuration <= 0 {
+				return fmt.Errorf("invalid test duration: %d", testDuration)
 			}
 			c.result.Bandwidth = (*bandwidthPacketSize * 8 * totalPacketsReceived) / (testDuration / 1000000)
 		} else {
