@@ -10,7 +10,7 @@ import (
 
 // ConfigureRoute configures a route for the specified network.
 // Returns 0 if no route changes were made, 1 if a new route was added, and 2 if an existing route was updated.
-func ConfigureRoute(dst *net.IPNet, gw net.IP, src net.IP) (int, error) {
+func ConfigureRoute(dst *net.IPNet, gw, src net.IP, proto netlink.RouteProtocol) (int, error) {
 	if dst == nil {
 		return 0, fmt.Errorf("network cannot be nil")
 	}
@@ -29,7 +29,7 @@ func ConfigureRoute(dst *net.IPNet, gw net.IP, src net.IP) (int, error) {
 	route := &netlink.Route{
 		Dst:      dst,
 		Gw:       gw,
-		Protocol: CustomRouteProtocol,
+		Protocol: proto,
 		Src:      src,
 	}
 
@@ -44,7 +44,7 @@ func ConfigureRoute(dst *net.IPNet, gw net.IP, src net.IP) (int, error) {
 
 	// Check for existing managed route
 	for _, r := range existing {
-		if r.Protocol == CustomRouteProtocol {
+		if r.Protocol == proto {
 			// Check if parameters need updating
 			if r.Gw.Equal(gw) &&
 				((src == nil && r.Src == nil) || (src != nil && r.Src != nil && r.Src.Equal(src))) {
@@ -73,7 +73,7 @@ func ConfigureRoute(dst *net.IPNet, gw net.IP, src net.IP) (int, error) {
 // RemoveRoute removes a route from the Linux routing table given a network.
 // Only removes routes that were created by this package (identified by CustomRouteProtocol).
 // Returns an error if the operation fails.
-func RemoveRoute(dst *net.IPNet) error {
+func RemoveRoute(dst *net.IPNet, proto netlink.RouteProtocol) error {
 	if dst == nil {
 		return fmt.Errorf("network cannot be nil")
 	}
@@ -81,7 +81,7 @@ func RemoveRoute(dst *net.IPNet) error {
 	// Create a route object with the destination and protocol
 	route := &netlink.Route{
 		Dst:      dst,
-		Protocol: CustomRouteProtocol,
+		Protocol: proto,
 	}
 
 	// Try to delete the route directly without checking existence
@@ -101,7 +101,7 @@ func RemoveRoute(dst *net.IPNet) error {
 // Only checks for routes managed by this package (identified by CustomRouteProtocol).
 // If src is provided, only checks for routes with matching source IP.
 // Returns true if the route exists, false otherwise.
-func RouteExists(dst *net.IPNet, src net.IP) (bool, error) {
+func RouteExists(dst *net.IPNet, src net.IP, proto netlink.RouteProtocol) (bool, error) {
 	if dst == nil {
 		return false, fmt.Errorf("network cannot be nil")
 	}
@@ -114,7 +114,7 @@ func RouteExists(dst *net.IPNet, src net.IP) (bool, error) {
 
 	// Check if any of the returned routes match our criteria
 	for _, r := range routes {
-		if r.Protocol == CustomRouteProtocol {
+		if r.Protocol == proto {
 			// If source IP is specified, check if it matches
 			if src != nil {
 				if r.Src != nil && r.Src.Equal(src) {
@@ -131,10 +131,10 @@ func RouteExists(dst *net.IPNet, src net.IP) (bool, error) {
 
 // ListManagedRoutes returns a list of all routes managed by this package
 // (identified by CustomRouteProtocol).
-func ListManagedRoutes() ([]netlink.Route, error) {
+func ListManagedRoutes(proto netlink.RouteProtocol) ([]netlink.Route, error) {
 	// Get all routes but filter by our protocol in the kernel
 	filter := &netlink.Route{
-		Protocol: CustomRouteProtocol,
+		Protocol: proto,
 	}
 
 	routes, err := netlink.RouteListFiltered(netlink.FAMILY_ALL, filter, netlink.RT_FILTER_PROTOCOL)
@@ -146,7 +146,7 @@ func ListManagedRoutes() ([]netlink.Route, error) {
 }
 
 // GetRoute returns a specific route matching the destination and optionally the gateway and/or source IP.
-func GetRoute(dst *net.IPNet, gw, src net.IP) (*netlink.Route, error) {
+func GetRoute(dst *net.IPNet, gw, src net.IP, proto netlink.RouteProtocol) (*netlink.Route, error) {
 	if dst == nil {
 		return nil, fmt.Errorf("network cannot be nil")
 	}
@@ -157,7 +157,7 @@ func GetRoute(dst *net.IPNet, gw, src net.IP) (*netlink.Route, error) {
 	}
 
 	for _, r := range routes {
-		if r.Protocol == CustomRouteProtocol {
+		if r.Protocol == proto {
 			// If neither gw nor src specified, return first matching route
 			if gw == nil && src == nil {
 				return &r, nil
@@ -180,10 +180,10 @@ func GetRoute(dst *net.IPNet, gw, src net.IP) (*netlink.Route, error) {
 // RemoveAllManagedRoutes deletes all routes managed by this package
 // (identified by CustomRouteProtocol).
 // Returns the number of routes removed and any error encountered.
-func RemoveAllManagedRoutes() (int, error) {
+func RemoveAllManagedRoutes(proto netlink.RouteProtocol) (int, error) {
 	var failedRoutes []netlink.Route
 	// Get list of all managed routes
-	routes, err := ListManagedRoutes()
+	routes, err := ListManagedRoutes(proto)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list managed routes: %v", err)
 	}

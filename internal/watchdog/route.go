@@ -6,6 +6,7 @@ import (
 	"hash"
 	"time"
 
+	"github.com/DrC0ns0le/net-perf/internal/route"
 	"github.com/DrC0ns0le/net-perf/internal/route/bird"
 	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
@@ -56,7 +57,7 @@ func (w *routeWatchdog) Start() {
 }
 
 func (w *routeWatchdog) checkSystemRTAlignment() bool {
-	systemRoutes, err := netctl.ListManagedRoutes()
+	systemRoutes, err := netctl.ListManagedRoutes(route.CustomRouteProtocol)
 	if err != nil {
 		w.logger.Errorf("failed to list managed routes: %v", err)
 		return false

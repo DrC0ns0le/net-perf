@@ -9,9 +9,11 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/DrC0ns0le/net-perf/internal/nexus/management"
+	"github.com/DrC0ns0le/net-perf/internal/nexus/measure"
 	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
-	pb "github.com/DrC0ns0le/net-perf/pkg/pb/management"
+	managementpb "github.com/DrC0ns0le/net-perf/pkg/pb/management"
+	measurepb "github.com/DrC0ns0le/net-perf/pkg/pb/measure"
 )
 
 var grpcPort = flag.Int("grpc.port", 5122, "port for grpc server")
@@ -56,5 +58,6 @@ func (s *GRPCServer) Stop() error {
 }
 
 func (s *GRPCServer) register() {
-	pb.RegisterManagementServer(s.server, &management.Server{})
+	managementpb.RegisterManagementServer(s.server, &management.Server{})
+	measurepb.RegisterMeasureServer(s.server, &measure.Server{})
 }

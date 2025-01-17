@@ -11,10 +11,12 @@ import (
 )
 
 type WGInterface struct {
-	Name      string
-	LocalID   string
-	RemoteID  string
-	IPVersion string
+	Name        string
+	LocalID     string
+	LocalIDInt  int
+	RemoteID    string
+	RemoteIDInt int
+	IPVersion   string
 }
 
 func GetOutgoingWGInterface(dst string) string {
@@ -105,11 +107,23 @@ func ParseWGInterface(iface string) (WGInterface, error) {
 		return WGInterface{}, fmt.Errorf("error parsing wireguard interface name: %s", iface)
 	}
 
+	localID, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return WGInterface{}, fmt.Errorf("error parsing local ID: %v", err)
+	}
+
+	remoteID, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return WGInterface{}, fmt.Errorf("error parsing remote ID: %v", err)
+	}
+
 	return WGInterface{
-		Name:      iface,
-		LocalID:   matches[1],
-		RemoteID:  matches[2],
-		IPVersion: matches[3],
+		Name:        iface,
+		LocalID:     matches[1],
+		LocalIDInt:  localID,
+		RemoteID:    matches[2],
+		RemoteIDInt: remoteID,
+		IPVersion:   matches[3],
 	}, nil
 }
 
@@ -124,6 +138,7 @@ func GetAllWGInterfaces() ([]WGInterface, error) {
 
 	wgIfs := []WGInterface{}
 
+	var wgIface WGInterface
 	for _, iface := range interfaces {
 		if len(iface.Name) > 2 && iface.Name[:2] == "wg" {
 			// parse the interface name
@@ -134,12 +149,13 @@ func GetAllWGInterfaces() ([]WGInterface, error) {
 				continue
 			}
 
-			wgIfs = append(wgIfs, WGInterface{
-				Name:      iface.Name,
-				LocalID:   matches[1],
-				RemoteID:  matches[2],
-				IPVersion: matches[3],
-			})
+			// parse the interface name
+			wgIface, err = ParseWGInterface(iface.Name)
+			if err != nil {
+				fmt.Printf("Error parsing interface name: %s\n", iface.Name)
+			}
+
+			wgIfs = append(wgIfs, wgIface)
 		}
 	}
 

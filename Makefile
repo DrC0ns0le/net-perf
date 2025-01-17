@@ -3,6 +3,7 @@
 BINARY_SERVER_NAME=net-perf
 BINARY_CLIENT_NAME=net-perfc
 BINARY_EXPORTER_NAME=net-perfe
+BINARY_DEV_NAME=net-perfd
 BINARY_DIR=bin
 
 # Generate protobuf code
@@ -23,6 +24,7 @@ build: proto
 	GOOS=linux GOARCH=arm64 go build -o $(BINARY_DIR)/$(BINARY_SERVER_NAME)-arm64 cmd/daemon/main.go
 	GOOS=linux GOARCH=amd64 go build -o $(BINARY_DIR)/$(BINARY_CLIENT_NAME)-amd64 cmd/client/main.go
 	GOOS=linux GOARCH=amd64 go build -o $(BINARY_DIR)/$(BINARY_EXPORTER_NAME)-amd64 cmd/exporter/main.go
+	GOOS=linux GOARCH=amd64 go build -o $(BINARY_DIR)/$(BINARY_DEV_NAME)-amd64 cmd/dev/main.go
 
 # Clean generated files and binaries
 clean:

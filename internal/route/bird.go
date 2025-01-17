@@ -43,7 +43,7 @@ func (b *Bird) Watcher() {
 	if err != nil {
 		b.Logger.Errorf("error in initial bird route table sync: %v", err)
 	}
-	removed, err := netctl.RemoveAllManagedRoutes()
+	removed, err := netctl.RemoveAllManagedRoutes(CustomRouteProtocol)
 	if err != nil {
 		b.Logger.Errorf("removed only %d routes: %v", removed, err)
 	}
@@ -166,7 +166,7 @@ func (b *Bird) UpdateRoutes(ctx context.Context, routes []bird.Route, mode strin
 		}
 
 		if len(route.Paths[chosenPathIndex].ASPath) == 0 || route.Paths[chosenPathIndex].ASPath[0] == b.Config.ASNumber {
-			if err := netctl.RemoveRoute(route.Network); err != nil {
+			if err := netctl.RemoveRoute(route.Network, CustomRouteProtocol); err != nil {
 				return fmt.Errorf("error removing route for network %s: %w", route.Network, err)
 			}
 		}
@@ -180,7 +180,7 @@ func (b *Bird) UpdateRoutes(ctx context.Context, routes []bird.Route, mode strin
 				} else {
 					return outboundV4
 				}
-			}())
+			}(), CustomRouteProtocol)
 			if err != nil {
 				return fmt.Errorf("error configuring route for network %s: %w", route.Network, err)
 			}

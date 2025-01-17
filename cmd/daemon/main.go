@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	"github.com/DrC0ns0le/net-perf/internal/measure"
-	"github.com/DrC0ns0le/net-perf/internal/measure/bandwidth"
 	"github.com/DrC0ns0le/net-perf/internal/nexus"
 	"github.com/DrC0ns0le/net-perf/internal/route"
 	"github.com/DrC0ns0le/net-perf/internal/system"
@@ -23,6 +22,10 @@ import (
 var (
 	updateChBufSize = flag.Int("wg.updatech", 0, "channel buffer size for wg interface updates")
 )
+
+type DaemonService interface {
+	Start() error
+}
 
 func main() {
 
@@ -58,17 +61,20 @@ func main() {
 		node.Logger.Fatalf("failed to convert local id to int: %v", err)
 	}
 
-	// start nexus servers
-	go nexus.Serve(node)
+	service := []DaemonService{
+		nexus.NewNexus(node),
+		measure.NewManager(node),
+		route.NewRouteManager(node),
+	}
 
-	// start bandwidth measurement server
-	go bandwidth.Serve(node)
-
-	// start measurement workers for bandwidth & latency
-	go measure.Start(node)
-
-	// route management
-	go route.Start(node)
+	for _, s := range service {
+		go func(s DaemonService) {
+			err = s.Start()
+			if err != nil {
+				node.Logger.Errorf("failed to start service: %v", err)
+			}
+		}(s)
+	}
 
 	// start watchdog
 	go watchdog.Start(node)

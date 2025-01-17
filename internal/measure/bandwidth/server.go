@@ -14,6 +14,13 @@ import (
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
+type ServerConfig struct {
+	stopCh         chan struct{}
+	runningServers []*Server
+
+	logger logging.Logger
+}
+
 type Server struct {
 
 	// UDP connection
@@ -30,36 +37,44 @@ type Server struct {
 	logger logging.Logger
 }
 
-var runningServers []*Server
+func NewServer(global *system.Node) *ServerConfig {
+	return &ServerConfig{
+		runningServers: make([]*Server, 0),
+		stopCh:         global.StopCh,
+		logger:         global.Logger,
+	}
+}
 
-func Serve(global *system.Node) {
+func (s *ServerConfig) Start() error {
 
 	// validation checks for bandwidth measurement
 	err := validateFlags()
 	if err != nil {
-		global.Logger.Fatal(err)
+		return fmt.Errorf("flags validation failed: %v", err)
 	}
 
 	localAddrs, err := netctl.GetLocalLoopbackIP()
 	if err != nil {
-		global.Logger.Fatal(err)
+		return fmt.Errorf("error getting local loopback IP: %v", err)
 	}
 
 	for _, addr := range localAddrs {
-		runningServers = append(runningServers, &Server{
+		s.runningServers = append(s.runningServers, &Server{
 			localAddr: fmt.Sprintf("%s:%d", addr, *bandwidthPort),
-			stopCh:    global.StopCh,
+			stopCh:    s.stopCh,
 			clients:   make(map[string]chan Packet),
-			logger:    global.Logger.With("component", "server", "listener", fmt.Sprintf("%s:%d", addr, *bandwidthPort)),
+			logger:    s.logger.With("component", "server", "listener", fmt.Sprintf("%s:%d", addr, *bandwidthPort)),
 		})
 	}
 
-	for _, server := range runningServers {
-		go server.Run()
+	for _, server := range s.runningServers {
+		go server.Serve()
 	}
+
+	return nil
 }
 
-func (s *Server) Run() {
+func (s *Server) Serve() {
 	addr, err := net.ResolveUDPAddr("udp4", s.localAddr)
 	if err != nil {
 		log.Fatal(err)
