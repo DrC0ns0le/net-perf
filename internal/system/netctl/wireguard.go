@@ -128,8 +128,6 @@ func ParseWGInterface(iface string) (WGInterface, error) {
 }
 
 func GetAllWGInterfaces() ([]WGInterface, error) {
-	wgPattern := regexp.MustCompile(`^wg(\d+)\.(\d+)_v(\d+)$`)
-
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		fmt.Printf("Error getting interfaces: %v\n", err)
@@ -142,17 +140,9 @@ func GetAllWGInterfaces() ([]WGInterface, error) {
 	for _, iface := range interfaces {
 		if len(iface.Name) > 2 && iface.Name[:2] == "wg" {
 			// parse the interface name
-			matches := wgPattern.FindStringSubmatch(iface.Name)
-
-			if len(matches) != 4 {
-				fmt.Printf("Error parsing interface name: %s\n", iface.Name)
-				continue
-			}
-
-			// parse the interface name
 			wgIface, err = ParseWGInterface(iface.Name)
 			if err != nil {
-				fmt.Printf("Error parsing interface name: %s\n", iface.Name)
+				continue
 			}
 
 			wgIfs = append(wgIfs, wgIface)

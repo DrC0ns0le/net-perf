@@ -16,6 +16,25 @@ type PathMetrics struct {
 	Cost         float64
 }
 
+func GetPingPathLatency(ctx context.Context, origin, remote int) (float64, error) {
+	response, err := QueryRange(ctx, "now-1m", "now", "1m", fmt.Sprintf(`avg(avg_over_time(network_path_latency_duration{path=~"%s"}[1m]))`, GetPathLabel(origin, remote)))
+	if err != nil {
+		return 0, err
+	}
+
+	if len(response.Data.Result) == 0 {
+		return 0, ErrNoPaths
+	}
+
+	latency, err := strconv.ParseFloat(response.Data.Result[0].Values[0][1].(string), 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return latency, nil
+
+}
+
 // GetPreferredPath returns the preferred IP version to use for communication with the given remote endpoint
 // along with the associated cost. If no valid paths are available, it returns an empty string and an error.
 func GetPreferredPath(ctx context.Context, origin, remote int) (string, float64, error) {
@@ -62,9 +81,9 @@ func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMe
 		return metrics, errors.New("could not generate path label")
 	}
 	queries := []string{
-		fmt.Sprintf(`avg(avg_over_time(network_latency_duration{path=~"%s"}[15m])) by (version)`, path),
-		fmt.Sprintf(`avg(avg_over_time(network_latency_loss{path=~"%s"}[15m]),avg_over_time(network_bandwidth_packet_loss{path=~"%s"}[15m])) by (version)`, path, path),
-		fmt.Sprintf(`avg(avg_over_time(network_latency_status{path=~"%s"}[15m])) by (version)`, path),
+		fmt.Sprintf(`avg(avg_over_time(network_latency_duration{path=~"%s"}[1m])) by (version)`, path),
+		fmt.Sprintf(`avg(avg_over_time(network_latency_loss{path=~"%s"}[3m]),avg_over_time(network_bandwidth_packet_loss{path=~"%s"}[3m])) by (version)`, path, path),
+		fmt.Sprintf(`avg(avg_over_time(network_latency_status{path=~"%s"}[1m])) by (version)`, path),
 	}
 
 	metrics = map[string]*PathMetrics{
@@ -73,7 +92,7 @@ func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMe
 	}
 
 	for i, query := range queries {
-		response, err := QueryRange(ctx, "now-15m", "now", "15m", query)
+		response, err := QueryRange(ctx, "now-1m", "now", "1m", query)
 		if err != nil {
 			return metrics, err
 		}

@@ -26,11 +26,11 @@ func NewGraph(ctx context.Context) (*Graph, error) {
 	// Find the maximum node ID to determine matrix size
 	maxNode := 0
 	for _, path := range paths {
-		if path.source > maxNode {
-			maxNode = path.source
+		if path.Source > maxNode {
+			maxNode = path.Source
 		}
-		if path.target > maxNode {
-			maxNode = path.target
+		if path.Target > maxNode {
+			maxNode = path.Target
 		}
 	}
 
@@ -52,7 +52,7 @@ func NewGraph(ctx context.Context) (*Graph, error) {
 
 	// Fill matrix with path costs
 	for _, path := range paths {
-		a, b := path.source, path.target
+		a, b := path.Source, path.Target
 		if a > b {
 			a, b = b, a
 		}
@@ -60,7 +60,7 @@ func NewGraph(ctx context.Context) (*Graph, error) {
 		if err != nil {
 			return nil, err
 		}
-		g.matrix[path.source][path.target] = cost
+		g.matrix[path.Source][path.Target] = cost
 	}
 
 	return g, nil

@@ -8,19 +8,19 @@ import (
 	"github.com/DrC0ns0le/net-perf/internal/metrics"
 )
 
-type networkPath struct {
-	source int
-	target int
+type NetworkPath struct {
+	Source int
+	Target int
 }
 
-func GetAllPaths(ctx context.Context) ([]networkPath, error) {
+func GetAllPaths(ctx context.Context) ([]NetworkPath, error) {
 
 	response, err := metrics.QueryRange(ctx, "now-1d", "now", "1d", "avg(network_latency_status) by (source, target)")
 	if err != nil {
 		return nil, err
 	}
 
-	var paths []networkPath
+	var paths []NetworkPath
 	for _, result := range response.Data.Result {
 		src, err := strconv.Atoi(result.Metric.Source)
 		if err != nil {
@@ -30,9 +30,9 @@ func GetAllPaths(ctx context.Context) ([]networkPath, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error parsing target: %w", err)
 		}
-		paths = append(paths, networkPath{
-			source: src,
-			target: tgt,
+		paths = append(paths, NetworkPath{
+			Source: src,
+			Target: tgt,
 		})
 	}
 	return paths, nil

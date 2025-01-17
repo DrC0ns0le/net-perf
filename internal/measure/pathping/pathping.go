@@ -11,16 +11,25 @@ import (
 
 	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var (
-	pathPingPort    = flag.Int("pathping.port", 5124, "port for path ping server")
-	pathPingBuf     = flag.Int("pathping.buffer", 1024, "buffer size for path ping server")
-	pathPingMax     = flag.Int("pathping.max", 16, "max number of hops for path ping")
-	pathPingTimeout = flag.Duration("pathping.timeout", 1*time.Second, "timeout for path ping")
+	pathPingPort              = flag.Int("pathping.port", 5124, "port for path ping server")
+	pathPingBuf               = flag.Int("pathping.buffer", 128, "buffer size for path ping server")
+	pathPingMax               = flag.Int("pathping.max", 16, "max number of hops for path ping")
+	pathPingTimeout           = flag.Duration("pathping.timeout", 1*time.Second, "timeout for path ping")
+	pathPingProcessingHistory = flag.Int("pathping.processing.history", 100, "number of processing durations to keep track of")
 
 	// singleton
 	pathPingServer *PathPingServer
+
+	pathLatencyProcessingDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "pathping_process_duration_microseconds",
+		Help:    "Distribution of pathping packet processing durations in microseconds",
+		Buckets: []float64{100, 250, 500, 1000, 2500, 5000, 10000}, // buckets in microseconds
+	}, []string{"id"})
 )
 
 // Result contains the results of a completed measurement
@@ -54,6 +63,9 @@ type PathPingServer struct {
 	peerAddrs map[uint32]*net.UDPAddr
 	active    bool
 	done      chan struct{}
+
+	processingDurationCh chan time.Duration
+	processingDuration   []time.Duration
 
 	resultsMu sync.RWMutex
 	results   map[string]*result
@@ -96,6 +108,9 @@ func NewServer(global *system.Node) *PathPingServer {
 		peerAddrs: make(map[uint32]*net.UDPAddr),
 		results:   make(map[string]*result),
 		done:      make(chan struct{}),
+
+		processingDurationCh: make(chan time.Duration, *pathPingProcessingHistory), // buffered channels to prevent blocking
+		processingDuration:   make([]time.Duration, *pathPingProcessingHistory),    // circular buffer
 	}
 
 	pathPingServer = s
@@ -146,6 +161,8 @@ func (n *PathPingServer) Start() error {
 	n.active = true
 	go n.listen()
 	n.config.Logger.Info("PathPing server started")
+	go n.cleanUpResults()
+	go n.updateProcessingDuration()
 	return nil
 }
 
@@ -275,6 +292,63 @@ func (n *PathPingServer) Stop() error {
 	return n.listener.Close()
 }
 
+func (n *PathPingServer) cleanUpResults() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-n.done:
+			return
+		case <-ticker.C:
+			n.resultsMu.Lock()
+			for i, r := range n.results {
+				if time.Since(r.lastUpdated) > *pathPingTimeout*3 {
+					n.config.Logger.Warnf("removing stale result: %v", i)
+					delete(n.results, i)
+				}
+			}
+			n.resultsMu.Unlock()
+		}
+	}
+}
+
+func (n *PathPingServer) updateProcessingDuration() {
+	var duration time.Duration
+	index := 0
+	for {
+		select {
+		case <-n.done:
+			return
+		case duration = <-n.processingDurationCh:
+			n.processingDuration[index] = duration
+			index++
+			if index == *pathPingProcessingHistory {
+				index = 0
+			}
+			pathLatencyProcessingDuration.With(prometheus.Labels{
+				"id": fmt.Sprintf("%d", n.config.ID),
+			}).Observe(float64(duration.Microseconds()))
+		}
+	}
+}
+
+func (n *PathPingServer) getAverageProcessingDuration() time.Duration {
+
+	sum := time.Duration(0)
+	for _, d := range n.processingDuration {
+		if d == 0 {
+			continue
+		}
+		sum += d
+	}
+
+	if sum == 0 {
+		return 0
+	}
+
+	return sum / time.Duration(*pathPingProcessingHistory)
+}
+
 // listen for incoming packets and process them.
 func (n *PathPingServer) listen() {
 	buf := make([]byte, n.config.BufferSize)
@@ -307,6 +381,10 @@ func (n *PathPingServer) listen() {
 // If so, the round-trip time is added to the results map. If not, the packet is
 // forwarded to the next hop.
 func (n *PathPingServer) processPacket(p *packet) {
+	startTime := time.Now()
+	defer func() {
+		n.processingDurationCh <- time.Since(startTime)
+	}()
 
 	// Check if we've completed the path
 	if p.CurrentHop+1 == p.PathLength-1 {
@@ -357,6 +435,8 @@ func (n *PathPingServer) forwardPacket(p *packet, isOrigin bool) error {
 	} else {
 		p.CurrentHop++
 	}
+
+	p.StartTime += n.getAverageProcessingDuration().Nanoseconds()
 
 	// Forward to next hop
 	nextHop := p.Path[p.CurrentHop+1]

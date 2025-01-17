@@ -88,7 +88,7 @@ func (w *linkWatchdog) manageLink() (bool, error) {
 		version = ""
 		if len(versions) > 1 {
 
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 
 			rID, err := strconv.Atoi(remote)

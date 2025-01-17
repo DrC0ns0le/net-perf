@@ -107,10 +107,9 @@ func unregisterPathLatencyMetrics(iface netctl.WGInterface) error {
 	pathName := generatePathName(iface.LocalID, iface.RemoteID)
 
 	metrics := []*prometheus.GaugeVec{
-		latencyStatus,
-		latencyLoss,
-		latencyDuration,
-		latencyJitter,
+		pathLatencyDuration,
+		pathLatencyLoss,
+		pathLatencyStatus,
 	}
 
 	for _, metric := range metrics {

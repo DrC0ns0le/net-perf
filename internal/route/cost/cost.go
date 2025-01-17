@@ -14,31 +14,31 @@ import (
 )
 
 const (
-	cacheExpiration = 15 * time.Second
+	costCacheExpiration = 15 * time.Second
 )
 
-type cacheEntry struct {
+type costCacheEntry struct {
 	cost       float64
 	expiration time.Time
 }
 
 type pathCostCache struct {
 	mu    sync.RWMutex
-	cache map[string]cacheEntry
+	cache map[string]costCacheEntry
 }
 
 func newPathCostCache() *pathCostCache {
 	cache := &pathCostCache{
-		cache: make(map[string]cacheEntry),
+		cache: make(map[string]costCacheEntry),
 	}
 
 	go cache.cleanExpired()
 	return cache
 }
 
-var globalCache = newPathCostCache()
+var globalCostCache = newPathCostCache()
 
-func generateCacheKey(src, dst int) string {
+func generateCostCacheKey(src, dst int) string {
 	return fmt.Sprintf("%d-%d", src, dst)
 }
 
@@ -58,15 +58,15 @@ func (c *pathCostCache) cleanExpired() {
 
 // GetPathCost returns the cached cost if available, otherwise calculates and caches it, src and dst is AS number
 func GetPathCost(ctx context.Context, src, dst int) (float64, error) {
-	key := generateCacheKey(src, dst)
+	key := generateCostCacheKey(src, dst)
 
 	// Try to get from cache first
-	globalCache.mu.RLock()
-	if entry, exists := globalCache.cache[key]; exists && time.Now().Before(entry.expiration) {
-		globalCache.mu.RUnlock()
+	globalCostCache.mu.RLock()
+	if entry, exists := globalCostCache.cache[key]; exists && time.Now().Before(entry.expiration) {
+		globalCostCache.mu.RUnlock()
 		return entry.cost, nil
 	}
-	globalCache.mu.RUnlock()
+	globalCostCache.mu.RUnlock()
 
 	// Not in cache, calculate
 	cost, err := SetPathCost(ctx, src, dst)
@@ -74,12 +74,12 @@ func GetPathCost(ctx context.Context, src, dst int) (float64, error) {
 		return math.Inf(1), err
 	}
 
-	globalCache.mu.Lock()
-	globalCache.cache[key] = cacheEntry{
+	globalCostCache.mu.Lock()
+	globalCostCache.cache[key] = costCacheEntry{
 		cost:       cost,
-		expiration: time.Now().Add(cacheExpiration),
+		expiration: time.Now().Add(costCacheExpiration),
 	}
-	globalCache.mu.Unlock()
+	globalCostCache.mu.Unlock()
 
 	return cost, nil
 }
