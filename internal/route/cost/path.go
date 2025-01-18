@@ -91,13 +91,13 @@ func SetPathLatency(ctx context.Context, src, dst int) (float64, error) {
 		return 0, fmt.Errorf("unexpected latency of 0 for %d -> %d", src, dst)
 	}
 
-	return latency, nil
+	return latency / 2, nil
 }
 
 // OverwritePathLatency overwrites the cached latency for a given path with a user-provided value.
 // The value will expire after pathCacheExpiration.
 // The latency is used in the calculation of path costs.
-func OverwritePathLatency(ctx context.Context, src, dst int, latency float64) error {
+func OverwritePathLatency(src, dst int, latency float64) error {
 
 	globalPathLatencyCache.mu.Lock()
 	globalPathLatencyCache.cache[generatePathLatencyCacheKey(src, dst)] = pathCacheEntry{

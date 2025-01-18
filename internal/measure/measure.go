@@ -118,9 +118,10 @@ func (m *ServiceManager) manageWorkers() {
 
 func NewManager(global *system.Node) *ServiceManager {
 	sm := &ServiceManager{
-		workers: make(map[string]*Worker),
-		logger:  global.Logger.With("component", "measure"),
-		stopCh:  global.StopCh,
+		workers:         make(map[string]*Worker),
+		logger:          global.Logger.With("component", "measure"),
+		stopCh:          global.StopCh,
+		measureUpdateCh: global.MeasureUpdateCh,
 		services: map[string]Service{
 			"bandwidth": bandwidth.NewServer(global),
 			"pathping":  pathping.NewServer(global),

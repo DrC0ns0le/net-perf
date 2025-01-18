@@ -24,6 +24,6 @@ func (s *Server) PathLatency(ctx context.Context, req *pb.PathLatencyRequest) (*
 	}(req.Path))
 	return &pb.PathLatencyResponse{
 		Status:  int32(result.Status),
-		Latency: int32(result.Duration.Milliseconds()),
+		Latency: int32(result.Duration.Microseconds()),
 	}, err
 }

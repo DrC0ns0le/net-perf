@@ -168,14 +168,16 @@ func tracePath(routeMap map[int]map[int]int) {
 		})
 
 		for _, route := range routes {
-			path, _, err := graph.GetShortestPath(source, route.Dest)
+			nPath, err := graph.GetTopNShortestPaths(source, route.Dest, 3)
 			if err != nil {
 				logger.Errorf("Dijkstra failed to get shortest path for %d -> %d: %v", source, route.Dest, err)
 				continue
 			}
 			fmt.Printf("  To: %d\n", route.Dest)
 			fmt.Printf("    Bird BGP: %v\n", route.Via)
-			fmt.Printf("    Dijkstra: %v\n", path[1:])
+			for i, p := range nPath {
+				fmt.Printf("    Dijkstra %d: %v\n", i, p.Path[1:])
+			}
 		}
 	}
 
