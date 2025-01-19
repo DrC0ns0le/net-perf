@@ -70,7 +70,7 @@ func GetPreferredPath(ctx context.Context, origin, remote int) (string, float64,
 //     as a percentage.
 //   - network_latency_status: average availability as a percentage.
 //
-// The values are averaged over a 5 minute time window.
+// The values are averaged over a 1 minute time window.
 func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMetrics, error) {
 
 	var metrics map[string]*PathMetrics

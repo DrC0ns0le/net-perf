@@ -28,8 +28,8 @@ var (
 )
 
 func startPathLatencyWorker(worker *Worker) {
-	key := fmt.Sprintf("iface=%s, sourceIP=%s, targetIP=%s, targetPort=%d",
-		worker.iface.Name, worker.sourceIP, worker.targetIP, worker.targetPort)
+	key := fmt.Sprintf("sourceIP=%s, targetIP=%s",
+		worker.sourceIP, worker.targetIP)
 
 	h := xxhash.Sum64String(key)
 
