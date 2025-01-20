@@ -48,6 +48,10 @@ The net-perf service is responsible for monitoring the network performance of al
   - Kernel parameters tuning
   - BIRD route table update watchdog
   - Route table aligment watchdog
+ 
+## To-Do
+
+- add to-do list (theres alot)
 
 ## Pre-requisites
 
@@ -97,9 +101,9 @@ Bandwidth Testing: 5121
 PathPing Service: 5124
 
 Socket Paths
-Unix control socket: /opt/wg-mesh/net-perf.sock
-BIRD IPv4 socket: /run/bird/bird.ctl
-BIRD IPv6 socket: /run/bird/bird6.ctl
+- Unix control socket: /opt/wg-mesh/net-perf.sock
+- BIRD IPv4 socket: /run/bird/bird.ctl
+- BIRD IPv6 socket: /run/bird/bird6.ctl
 
 ## Usage
 
@@ -113,3 +117,18 @@ make build
 perfc = net-perf client for all nodes route table overview
 
 perfe = net-perf elasticsearch "exporter"
+
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- WireGuard® is a registered trademark of Jason A. Donenfeld
+- Thanks to the WireGuard and Go communities
+- Part of my University Final Year Project
