@@ -15,6 +15,7 @@ import (
 
 var (
 	routeUpdateInterval = flag.Duration("watchdog.route.updateinterval", 5*time.Second, "interval for missing route checks")
+	whitelistedRouteDev = []string{"cilium"}
 )
 
 type routeWatchdog struct {
@@ -69,9 +70,21 @@ func (w *routeWatchdog) checkSystemRTAlignment() bool {
 		managedRoutes[key] = struct{}{}
 	}
 
+routeCheck:
 	for _, route := range w.routeTable.Routes {
 		key := fmt.Sprintf("%s_%v", route.Destination.String(), route.Gateway)
+
 		if _, exists := managedRoutes[key]; !exists {
+			for _, wlD := range whitelistedRouteDev {
+				managedByOthers, err := netctl.RouteDeviceHasPrefix(route.Destination, wlD, 0)
+				if err != nil {
+					w.logger.Errorf("failed to check if route is managed by %s: %v", wlD, err)
+				}
+				if managedByOthers {
+					continue routeCheck
+				}
+			}
+
 			w.logger.Errorf("missing system route %s via %s",
 				route.Destination, route.Gateway)
 			return true

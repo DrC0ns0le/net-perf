@@ -85,7 +85,7 @@ func (m *ServiceManager) manageWorkers() {
 				s.logger.Infof("removing site: %s", s.siteID)
 				s.stop()
 				delete(m.sites, i)
-			} else if _, ok = currentIfaces[i][s.siteWorker.iface.Name]; ok {
+			} else if _, ok = currentIfaces[i][s.siteWorker.iface.Name]; !ok {
 				s.interfaceWorkersMu.Lock()
 				s.logger.Infof("removing interface worker: %s", s.interfaceWorkers[s.siteWorker.iface.Name].iface.Name)
 				close(s.interfaceWorkers[s.siteWorker.iface.Name].stopCh)

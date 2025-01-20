@@ -3,6 +3,7 @@ package netctl
 import (
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
@@ -207,4 +208,51 @@ func RemoveAllManagedRoutes(proto netlink.RouteProtocol) (int, error) {
 	}
 
 	return removed, nil
+}
+
+// RouteDeviceHasPrefix checks if a specific route has a device name starting with the specified prefix.
+// Returns true if a matching route is found, false otherwise.
+func RouteDeviceHasPrefix(dst *net.IPNet, prefix string, proto netlink.RouteProtocol) (bool, error) {
+	if dst == nil {
+		return false, fmt.Errorf("destination network cannot be nil")
+	}
+	if prefix == "" {
+		return false, fmt.Errorf("prefix cannot be empty")
+	}
+
+	// Create a route filter for the specific destination
+	filter := &netlink.Route{
+		Dst: dst,
+	}
+
+	// Get routes matching the destination
+	routes, err := netlink.RouteListFiltered(netlink.FAMILY_ALL, filter, netlink.RT_FILTER_DST)
+	if err != nil {
+		return false, fmt.Errorf("failed to list routes: %v", err)
+	}
+
+	// Check each matching route's device name
+	for _, route := range routes {
+		// Skip if no device is associated with the route
+		if route.LinkIndex == 0 {
+			continue
+		}
+
+		// Get the link (device) by index
+		link, err := netlink.LinkByIndex(route.LinkIndex)
+		if err != nil {
+			continue // Skip if we can't get the link info
+		}
+
+		// Check if device name starts with prefix
+		if strings.HasPrefix(link.Attrs().Name, prefix) {
+			// If protocol is specified, check it matches
+			if proto != 0 && route.Protocol != proto {
+				continue
+			}
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
