@@ -42,14 +42,6 @@ type site struct {
 	logger logging.Logger
 }
 
-type Config struct {
-	SourceIP   string
-	TargetIP   string
-	TargetPort int
-
-	Logger logging.Logger
-}
-
 type Service interface {
 	Start() error
 }
@@ -76,31 +68,24 @@ func (m *ServiceManager) manageWorkers() {
 			return
 		}
 
-		var (
-			siteFound            bool
-			interfaceWorkerFound bool
-		)
+		currentIfaces := make(map[int]map[string]struct{})
+		for _, iface := range ifaces {
+			if _, ok := currentIfaces[iface.RemoteIDInt]; !ok {
+				currentIfaces[iface.RemoteIDInt] = make(map[string]struct{})
+			}
+			currentIfaces[iface.RemoteIDInt][iface.Name] = struct{}{}
+		}
 		m.sitesMu.Lock()
 		defer m.sitesMu.Unlock()
+
+		var ok bool // reduce allocations
 		// handle removals
 		for i, s := range m.sites {
-			siteFound = false
-			interfaceWorkerFound = false
-			for _, iface := range ifaces {
-				if iface.RemoteIDInt == i {
-					siteFound = true
-					if _, ok := s.interfaceWorkers[iface.Name]; ok {
-						interfaceWorkerFound = true
-						break
-					}
-				}
-			}
-
-			if !siteFound {
+			if _, ok = currentIfaces[i]; !ok {
 				s.logger.Infof("removing site: %s", s.siteID)
 				s.stop()
 				delete(m.sites, i)
-			} else if !interfaceWorkerFound {
+			} else if _, ok = currentIfaces[i][s.siteWorker.iface.Name]; ok {
 				s.interfaceWorkersMu.Lock()
 				s.logger.Infof("removing interface worker: %s", s.interfaceWorkers[s.siteWorker.iface.Name].iface.Name)
 				close(s.interfaceWorkers[s.siteWorker.iface.Name].stopCh)
