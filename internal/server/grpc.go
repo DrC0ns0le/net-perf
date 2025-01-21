@@ -1,4 +1,4 @@
-package nexus
+package server
 
 import (
 	"flag"
@@ -8,8 +8,8 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/DrC0ns0le/net-perf/internal/nexus/management"
-	"github.com/DrC0ns0le/net-perf/internal/nexus/measure"
+	"github.com/DrC0ns0le/net-perf/internal/server/management"
+	"github.com/DrC0ns0le/net-perf/internal/server/measure"
 	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
 	managementpb "github.com/DrC0ns0le/net-perf/pkg/pb/management"

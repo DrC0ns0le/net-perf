@@ -1,4 +1,4 @@
-package nexus
+package server
 
 import (
 	"bufio"

@@ -1,4 +1,4 @@
-package nexus
+package server
 
 import (
 	"fmt"
@@ -12,14 +12,14 @@ type Server interface {
 	Stop() error
 }
 
-type Nexus struct {
+type ServerManager struct {
 	stopCh  chan struct{}
 	errCh   chan error
 	servers []Server
 }
 
-func NewNexus(global *system.Node) *Nexus {
-	return &Nexus{
+func NewServerManager(global *system.Node) *ServerManager {
+	return &ServerManager{
 		stopCh: global.StopCh,
 		servers: []Server{
 			NewGRPCServer(global),
@@ -29,7 +29,7 @@ func NewNexus(global *system.Node) *Nexus {
 	}
 }
 
-func (n *Nexus) Start() error {
+func (n *ServerManager) Start() error {
 	var wg sync.WaitGroup
 	wg.Add(len(n.servers))
 

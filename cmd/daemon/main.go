@@ -8,15 +8,13 @@ import (
 	"syscall"
 
 	"github.com/DrC0ns0le/net-perf/internal/measure"
-	"github.com/DrC0ns0le/net-perf/internal/nexus"
 	"github.com/DrC0ns0le/net-perf/internal/route"
+	"github.com/DrC0ns0le/net-perf/internal/server"
 	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/internal/system/tunables"
 	"github.com/DrC0ns0le/net-perf/internal/watchdog"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
-
-	_ "github.com/DrC0ns0le/net-perf/internal/system"
 )
 
 var (
@@ -62,7 +60,7 @@ func main() {
 	}
 
 	service := []DaemonService{
-		nexus.NewNexus(node),
+		server.NewServerManager(node),
 		measure.NewManager(node),
 		route.NewRouteManager(node),
 	}
