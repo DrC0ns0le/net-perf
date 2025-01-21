@@ -82,7 +82,7 @@ func (m *ServiceManager) manageWorkers() {
 		// handle removals
 		for i, s := range m.sites {
 			if _, ok = currentIfaces[i]; !ok {
-				s.logger.Infof("removing site: %s", s.siteID)
+				s.logger.Infof("removing site: %d", s.siteID)
 				s.stop()
 				delete(m.sites, i)
 			} else if _, ok = currentIfaces[i][s.siteWorker.iface.Name]; !ok {
@@ -98,7 +98,7 @@ func (m *ServiceManager) manageWorkers() {
 		for _, iface := range ifaces {
 			// check if site exists
 			if _, ok := m.sites[iface.RemoteIDInt]; !ok {
-				m.logger.Infof("found new site: %s", iface.RemoteIDInt)
+				m.logger.Infof("found new site: %d", iface.RemoteIDInt)
 				m.sites[iface.RemoteIDInt] = &site{
 					siteID:           iface.RemoteID,
 					interfaceWorkers: make(map[string]*Worker),

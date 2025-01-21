@@ -6,7 +6,7 @@ import (
 )
 
 type RouteTable struct {
-	Routes []Route
+	Routes []KernelRoute
 
 	mu       sync.RWMutex
 	updateMu sync.Mutex
@@ -14,18 +14,18 @@ type RouteTable struct {
 	ready bool
 }
 
-type Route struct {
+type KernelRoute struct {
 	Destination *net.IPNet
 	Gateway     net.IP
 }
 
 func (rt *RouteTable) AddRoute(destination *net.IPNet, gateway net.IP) {
 	rt.mu.Lock()
-	rt.Routes = append(rt.Routes, Route{Destination: destination, Gateway: gateway})
+	rt.Routes = append(rt.Routes, KernelRoute{Destination: destination, Gateway: gateway})
 	rt.mu.Unlock()
 }
 
-func (rt *RouteTable) GetRoutes() []Route {
+func (rt *RouteTable) GetRoutes() []KernelRoute {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
 	return rt.Routes
@@ -33,7 +33,7 @@ func (rt *RouteTable) GetRoutes() []Route {
 
 func (rt *RouteTable) ClearRoutes() {
 	rt.mu.Lock()
-	rt.Routes = []Route{}
+	rt.Routes = []KernelRoute{}
 	rt.mu.Unlock()
 }
 

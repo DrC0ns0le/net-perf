@@ -1,60 +1,117 @@
 package bird
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"hash"
 	"net"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/DrC0ns0le/net-perf/internal/route/routers"
 	"github.com/cespare/xxhash"
 )
 
-type Route struct {
-	Network  *net.IPNet
-	Paths    []BGPPath
-	OriginAS int
-}
-type BGPPath struct {
-	AS              int
-	ASPath          []int
-	Next            net.IP
-	Interface       string
-	MED             int
-	LocalPreference int
-	OriginType      string
+const (
+	birdSocket  = "/run/bird/bird.ctl"
+	bird6Socket = "/run/bird/bird6.ctl" // for IPv6 Socket
+	timeout     = 10 * time.Second
+)
+
+type Bird struct {
+	conn   net.Conn
+	reader *bufio.Reader
+	writer *bufio.Writer
 }
 
-func GetRoutes(mode string) ([]Route, hash.Hash64, error) {
-	conn, reader, writer, err := connect(mode)
+func NewRouter() *Bird {
+	return &Bird{}
+}
+
+func (b *Bird) GetConfig(mode string) (routers.Config, error) {
+	// Open the file
+	file, err := os.Open(
+		fmt.Sprintf("/etc/bird/bird%s.conf", func() string {
+			if mode == "v6" {
+				return "6"
+			}
+			return ""
+		}()),
+	)
+	if err != nil {
+		return routers.Config{}, fmt.Errorf("error opening file: %v", err)
+	}
+	defer file.Close()
+
+	// Create a scanner to read the file line by line
+	scanner := bufio.NewScanner(file)
+
+	// Regular expression to match "local as" followed by numbers
+	re := regexp.MustCompile(`local\s+as\s+(\d+)`)
+
+	config := routers.Config{}
+
+	// Scan through each line
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Check if line contains the pattern we're looking for
+		if strings.Contains(line, "local as") {
+			// Extract the number using regex
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				// Parse the captured number
+				var asNumber int
+				_, err := fmt.Sscanf(matches[1], "%d", &asNumber)
+				if err != nil {
+					return config, fmt.Errorf("error parsing AS number: %v", err)
+				}
+				config.ASNumber = asNumber
+			}
+		}
+	}
+
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		return config, fmt.Errorf("error reading file: %v", err)
+	}
+
+	return config, nil
+}
+
+func (b *Bird) GetRoutes(mode string) ([]routers.Route, hash.Hash64, error) {
+	var err error
+	err = b.connect(mode)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer conn.Close()
+	defer b.conn.Close()
 
 	// Initialize hash
 	h := xxhash.New()
 
 	// Send command to show routes
-	_, err = writer.WriteString("show route all\n")
+	_, err = b.writer.WriteString("show route all\n")
 	if err != nil {
 		return nil, nil, err
 	}
-	writer.Flush()
+	b.writer.Flush()
 
 	var line string
 	var rt string
-	var route Route
+	var route routers.Route
 
-	var routes []Route
-	var bgpPath BGPPath
+	var routes []routers.Route
+	var bgpPath routers.BGPPath
 
 	var isBGP bool
 
 	for {
-		line, err = reader.ReadString('\n')
+		line, err = b.reader.ReadString('\n')
 		if err != nil {
 			break
 		}
@@ -84,7 +141,7 @@ func GetRoutes(mode string) ([]Route, hash.Hash64, error) {
 				for _, as := range bgpPath.ASPath {
 					binary.Write(h, binary.LittleEndian, uint32(as))
 				}
-				bgpPath = BGPPath{}
+				bgpPath = routers.BGPPath{}
 			}
 
 			// split to fields separated by space
@@ -99,11 +156,11 @@ func GetRoutes(mode string) ([]Route, hash.Hash64, error) {
 					// Hash the completed route
 					h.Write([]byte(route.Network.String()))
 					binary.Write(h, binary.LittleEndian, uint32(route.OriginAS))
-					route = Route{}
+					route = routers.Route{}
 				}
 
 				// check if this route is a BGP route
-				nextLine, err := reader.ReadString('\n')
+				nextLine, err := b.reader.ReadString('\n')
 				if err != nil {
 					return nil, nil, err
 				}
@@ -213,4 +270,36 @@ func GetRoutes(mode string) ([]Route, hash.Hash64, error) {
 	}
 
 	return routes, h, nil
+}
+
+func (b *Bird) connect(mode string) error {
+	var err error
+	if b.conn != nil {
+		b.conn.Close()
+	}
+	b.conn, err = net.DialTimeout("unix", func() string {
+		if mode == "v6" {
+			return bird6Socket
+		}
+		return birdSocket
+	}(), timeout)
+	if err != nil {
+		return fmt.Errorf("error connecting to BIRD socket: %v", err)
+	}
+
+	b.conn.SetDeadline(time.Now().Add(timeout))
+
+	b.reader = bufio.NewReader(b.conn)
+	b.writer = bufio.NewWriter(b.conn)
+
+	// Read the welcome message
+	welcome, err := b.reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("error reading welcome message: %v", err)
+	}
+	if !strings.HasPrefix(welcome, "0001 ") {
+		return fmt.Errorf("invalid welcome message: %s", welcome)
+	}
+
+	return nil
 }

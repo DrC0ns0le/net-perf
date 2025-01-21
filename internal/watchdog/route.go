@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/route"
-	"github.com/DrC0ns0le/net-perf/internal/route/bird"
+	"github.com/DrC0ns0le/net-perf/internal/route/routers"
 	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
@@ -22,6 +22,7 @@ type routeWatchdog struct {
 	stopCh     chan struct{}
 	rtUpdateCh chan struct{}
 
+	router     routers.Router
 	routeTable *system.RouteTable
 	rtCache    map[string]hash.Hash64
 
@@ -97,7 +98,7 @@ routeCheck:
 func (w *routeWatchdog) checkBirdChanges() bool {
 	needUpdate := false
 	for _, mode := range []string{"v4", "v6"} {
-		_, hash, err := bird.GetRoutes(mode)
+		_, hash, err := w.router.GetRoutes(mode)
 		if err != nil {
 			w.logger.Errorf("error getting routes: %v", err)
 		}

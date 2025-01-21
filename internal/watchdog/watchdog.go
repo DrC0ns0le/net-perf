@@ -3,6 +3,7 @@ package watchdog
 import (
 	"hash"
 
+	"github.com/DrC0ns0le/net-perf/internal/route/routers/bird"
 	"github.com/DrC0ns0le/net-perf/internal/system"
 )
 
@@ -37,6 +38,7 @@ func NewLinkWatchdog(global *system.Node) watchdogComponent {
 func NewRouteWatchdog(global *system.Node) watchdogComponent {
 	return &routeWatchdog{
 		stopCh:     global.StopCh,
+		router:     bird.NewRouter(),
 		routeTable: global.RouteTable,
 		rtCache:    make(map[string]hash.Hash64),
 		rtUpdateCh: global.RTUpdateCh,
