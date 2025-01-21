@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sync"
 
 	"github.com/DrC0ns0le/net-perf/internal/route/cost"
 )
@@ -13,6 +14,7 @@ type Graph struct {
 	size   int
 	matrix [][]float64
 	prev   []int
+	mu     sync.RWMutex
 }
 
 // NewGraph creates a new graph with adjacency matrix representation
@@ -52,11 +54,7 @@ func NewGraph(ctx context.Context) (*Graph, error) {
 
 	// Fill matrix with path costs
 	for _, path := range paths {
-		a, b := path.Source, path.Target
-		if a > b {
-			a, b = b, a
-		}
-		cost, err := cost.GetPathCost(ctx, a+64512, b+64512)
+		cost, err := cost.GetPathCost(ctx, path.Source+64512, path.Target+64512)
 		if err != nil {
 			return nil, err
 		}
@@ -68,22 +66,26 @@ func NewGraph(ctx context.Context) (*Graph, error) {
 
 // RefreshWeights refreshes all the weights in the graph
 func (g *Graph) RefreshWeights(ctx context.Context) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	paths, err := GetAllPaths(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get network paths: %w", err)
 	}
 
 	for _, path := range paths {
-		a, b := path.Source, path.Target
-		if a > b {
-			a, b = b, a
-		}
-		newCost, err := cost.GetPathCost(ctx, a+64512, b+64512)
+		newCost, err := cost.GetPathCost(ctx, path.Source+64512, path.Target+64512)
 		if err != nil {
-			return fmt.Errorf("failed to get path cost for %d -> %d: %w", a, b, err)
+			return fmt.Errorf("failed to get path cost for %d -> %d: %w", path.Source, path.Target, err)
+		}
+		if newCost == 0 {
+			return fmt.Errorf("unexpected cost of 0 for %d -> %d", path.Source, path.Target)
+		}
+
+		if math.IsInf(newCost, 1) {
+			return fmt.Errorf("unexpected infinity cost for %d -> %d", path.Source, path.Target)
 		}
 		g.matrix[path.Source][path.Target] = newCost
-		g.matrix[path.Target][path.Source] = newCost // assume symmetric
 	}
 
 	return nil
@@ -91,16 +93,22 @@ func (g *Graph) RefreshWeights(ctx context.Context) error {
 
 // SetDirectedWeights sets the weight of a directed edge
 func (g *Graph) SetDirectedWeights(src, dst int, weight float64) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.matrix[src][dst] = weight
 }
 
 // SetUndirectedWeights sets the weight of an undirected edge
 func (g *Graph) SetUndirectedWeights(src, dst int, weight float64) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.matrix[src][dst] = weight
 	g.matrix[dst][src] = weight
 }
 
 func (g *Graph) String() string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 	return fmt.Sprintf("Graph:\nSize: %d\nMatrix: %v\n", g.size, g.matrix)
 }
 
@@ -160,6 +168,8 @@ func (g *Graph) Dijkstra(start int) []float64 {
 
 // GetShortestPath returns the shortest path from start to end
 func (g *Graph) GetShortestPath(start, end int) ([]int, float64, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 	dist := g.Dijkstra(start)
 
 	if dist[end] == math.Inf(1) {

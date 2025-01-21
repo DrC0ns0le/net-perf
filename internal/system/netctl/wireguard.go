@@ -138,7 +138,7 @@ func GetAllWGInterfaces() ([]WGInterface, error) {
 
 	var wgIface WGInterface
 	for _, iface := range interfaces {
-		if len(iface.Name) > 2 && iface.Name[:2] == "wg" {
+		if strings.HasPrefix(iface.Name, "wg") {
 			// parse the interface name
 			wgIface, err = ParseWGInterface(iface.Name)
 			if err != nil {
@@ -232,7 +232,7 @@ func DstWGInterfaceExists(dst int) bool {
 		return true // workaround for local testing/client/exporter
 	}
 	for _, iface := range wgIfs {
-		if iface.RemoteID == strconv.Itoa(dst) {
+		if iface.RemoteIDInt == dst {
 			return true
 		}
 	}

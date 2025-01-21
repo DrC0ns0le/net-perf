@@ -30,6 +30,10 @@ var (
 		Help:    "Distribution of pathping packet processing durations in microseconds",
 		Buckets: []float64{100, 250, 500, 1000, 2500, 5000, 10000}, // buckets in microseconds
 	}, []string{"id"})
+	pathAverageProcessingDuration = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "pathping_average_process_duration_microseconds",
+		Help: "Average pathping packet processing duration in microseconds",
+	}, []string{"id"})
 )
 
 // Result contains the results of a completed measurement
@@ -328,6 +332,7 @@ func (n *PathPingServer) updateProcessingDuration() {
 			pathLatencyProcessingDuration.With(prometheus.Labels{
 				"id": fmt.Sprintf("%d", n.config.ID),
 			}).Observe(float64(duration.Microseconds()))
+			pathAverageProcessingDuration.WithLabelValues(fmt.Sprintf("%d", n.config.ID)).Set(float64(n.getAverageProcessingDuration().Microseconds()))
 		}
 	}
 }

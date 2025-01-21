@@ -132,7 +132,7 @@ func (rm *RouteManager) graphBasedShortestPath(ctx context.Context, route router
 	if gw, ok = rm.PathMap[key]; !ok {
 		path, _, err := rm.Graph.GetShortestPath(asToSiteID(rm.Config.ASNumber), asToSiteID(originAS))
 		if err != nil {
-			return fmt.Errorf("error getting shortest path: %w", err)
+			return fmt.Errorf("error getting shortest path for %d -> %d: %w", asToSiteID(rm.Config.ASNumber), asToSiteID(originAS), err)
 		}
 		if len(path) < 2 {
 			return fmt.Errorf("no path found")
@@ -142,7 +142,6 @@ func (rm *RouteManager) graphBasedShortestPath(ctx context.Context, route router
 			return fmt.Errorf("error finding site gw: %w", err)
 		}
 		rm.PathMap[key] = gw
-		rm.RouteTable.AddRoute(route.Network, gw)
 	}
 
 	rm.RouteTable.AddRoute(route.Network, gw)

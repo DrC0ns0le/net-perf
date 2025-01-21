@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/metrics"
-	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 )
 
 const (
@@ -93,11 +92,6 @@ func SetPathCost(ctx context.Context, src, dst int) (float64, error) {
 		return 0, nil
 	}
 
-	// Check if dst wg interface exists, if not return infinity
-	if !netctl.DstWGInterfaceExists(dst - 64512) {
-		return math.Inf(1), nil
-	}
-
 	_, cost, err := metrics.GetPreferredPath(ctx, src-64512, dst-64512)
 	if err != nil {
 		var netErr *net.OpError
@@ -109,6 +103,10 @@ func SetPathCost(ctx context.Context, src, dst int) (float64, error) {
 		default:
 			return 0, fmt.Errorf("failed to get path cost for %d -> %d: %v", src, dst, err)
 		}
+	}
+
+	if math.IsInf(cost, 1) {
+		return 0, fmt.Errorf("unexpected infinity cost for %d -> %d", src, dst)
 	}
 
 	if cost == 0 {

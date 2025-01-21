@@ -81,9 +81,9 @@ func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMe
 		return metrics, errors.New("could not generate path label")
 	}
 	queries := []string{
-		fmt.Sprintf(`avg(avg_over_time(network_latency_duration{path=~"%s"}[1m])) by (version)`, path),
-		fmt.Sprintf(`avg(avg_over_time(network_latency_loss{path=~"%s"}[3m]),avg_over_time(network_bandwidth_packet_loss{path=~"%s"}[3m])) by (version)`, path, path),
-		fmt.Sprintf(`avg(avg_over_time(network_latency_status{path=~"%s"}[1m])) by (version)`, path),
+		fmt.Sprintf(`avg(avg_over_time(network_latency_duration{path=~"%s"}[2m])) by (version)`, path),
+		fmt.Sprintf(`avg(avg_over_time(network_latency_loss{path=~"%s"}[5m]),avg_over_time(network_bandwidth_packet_loss{path=~"%s"}[5m])) by (version)`, path, path),
+		fmt.Sprintf(`avg(avg_over_time(network_latency_status{path=~"%s"}[2m])) by (version)`, path),
 	}
 
 	metrics = map[string]*PathMetrics{
@@ -92,7 +92,7 @@ func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMe
 	}
 
 	for i, query := range queries {
-		response, err := QueryRange(ctx, "now-1m", "now", "1m", query)
+		response, err := QueryRange(ctx, "now-5m", "now", "2m", query)
 		if err != nil {
 			return metrics, err
 		}
