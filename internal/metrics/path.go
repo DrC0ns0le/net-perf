@@ -104,7 +104,7 @@ func GetPathMetrics(ctx context.Context, origin, remote int) (map[string]*PathMe
 				if err != nil {
 					return nil, fmt.Errorf("error parsing latency: %w", err)
 				}
-				metrics[result.Metric.Version].Latency = latency
+				metrics[result.Metric.Version].Latency = latency / 2 // assuming symmetric latency
 			case 1:
 				loss, err := strconv.ParseFloat(result.Values[0][1].(string), 64)
 				if err != nil {

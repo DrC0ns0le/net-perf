@@ -66,6 +66,40 @@ func NewGraph(ctx context.Context) (*Graph, error) {
 	return g, nil
 }
 
+// RefreshWeights refreshes all the weights in the graph
+func (g *Graph) RefreshWeights(ctx context.Context) error {
+	paths, err := GetAllPaths(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get network paths: %w", err)
+	}
+
+	for _, path := range paths {
+		a, b := path.Source, path.Target
+		if a > b {
+			a, b = b, a
+		}
+		newCost, err := cost.GetPathCost(ctx, a+64512, b+64512)
+		if err != nil {
+			return fmt.Errorf("failed to get path cost for %d -> %d: %w", a, b, err)
+		}
+		g.matrix[path.Source][path.Target] = newCost
+		g.matrix[path.Target][path.Source] = newCost // assume symmetric
+	}
+
+	return nil
+}
+
+// SetDirectedWeights sets the weight of a directed edge
+func (g *Graph) SetDirectedWeights(src, dst int, weight float64) {
+	g.matrix[src][dst] = weight
+}
+
+// SetUndirectedWeights sets the weight of an undirected edge
+func (g *Graph) SetUndirectedWeights(src, dst int, weight float64) {
+	g.matrix[src][dst] = weight
+	g.matrix[dst][src] = weight
+}
+
 func (g *Graph) String() string {
 	return fmt.Sprintf("Graph:\nSize: %d\nMatrix: %v\n", g.size, g.matrix)
 }

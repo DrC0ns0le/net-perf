@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/route/finder"
@@ -35,8 +36,10 @@ type RouteManager struct {
 	Config     routers.Config
 	RouteTable *system.RouteTable
 
-	Graph   *finder.Graph
-	PathMap map[uint32]int
+	Graph      *finder.Graph
+	graphReady bool
+	PathMapMu  sync.RWMutex
+	PathMap    map[string]net.IP
 
 	// routing daemon interface
 	Router routers.Router
@@ -54,7 +57,7 @@ func NewRouteManager(global *system.Node) *RouteManager {
 
 		RouteTable: global.RouteTable,
 
-		PathMap: make(map[uint32]int),
+		PathMap: make(map[string]net.IP),
 
 		Router: bird.NewRouter(),
 
@@ -79,6 +82,14 @@ func (rm *RouteManager) Start() error {
 	rm.outboundV4, rm.outboundV6, err = netctl.GetOutboundIPs()
 	if err != nil {
 		return fmt.Errorf("error getting outbound IP: %w", err)
+	}
+
+	// Initialize graph
+	ctx, cancel := context.WithTimeout(context.Background(), *costContextTimeout)
+	defer cancel()
+	rm.Graph, err = finder.NewGraph(ctx)
+	if err != nil {
+		return fmt.Errorf("error initializing graph: %w", err)
 	}
 
 	// Initial run
@@ -156,6 +167,10 @@ func (rm *RouteManager) run() {
 
 func (rm *RouteManager) SyncRouteTable() error {
 	var err error
+
+	if err = rm.SyncGraph(); err != nil {
+		return fmt.Errorf("error updating graph: %w", err)
+	}
 	if err = rm.UpdateRouteTable(); err != nil {
 		return fmt.Errorf("error updating route table: %w", err)
 	}
@@ -163,6 +178,22 @@ func (rm *RouteManager) SyncRouteTable() error {
 		return fmt.Errorf("error removing outdated routes: %w", err)
 	}
 	return rm.applyRouteTable()
+}
+
+func (rm *RouteManager) SyncGraph() error {
+	var err error
+	ctx, cancel := context.WithTimeout(context.Background(), *costContextTimeout)
+	defer cancel()
+	if err = rm.Graph.RefreshWeights(ctx); err != nil {
+		rm.logger.Errorf("error refreshing graph route weights: %v", err)
+		rm.graphReady = false
+	} else {
+		rm.PathMapMu.Lock()
+		defer rm.PathMapMu.Unlock()
+		rm.PathMap = make(map[string]net.IP)
+		rm.graphReady = true
+	}
+	return nil
 }
 
 func (rm *RouteManager) UpdateRouteTable() error {
@@ -193,7 +224,11 @@ func (rm *RouteManager) addToRouteTable(route []routers.Route) error {
 			continue
 		} else {
 			// we need to handle this route, ie running through the routing algorithms to find the gw
-			if err := rm.selectLowestCostBGPPath(ctx, r); err != nil {
+			if rm.graphReady {
+				if err := rm.graphBasedShortestPath(ctx, r); err != nil {
+					return fmt.Errorf("error selecting graph based shortest path: %w", err)
+				}
+			} else if err := rm.selectLowestCostBGPPath(ctx, r); err != nil {
 				return fmt.Errorf("error selecting lowest cost BGP path: %w", err)
 			}
 		}

@@ -6,8 +6,11 @@ import (
 )
 
 type Route struct {
-	Network  *net.IPNet
-	Paths    []BGPPath
+	// Network is the network of the route
+	Network *net.IPNet
+	// Paths is the list of BGP paths
+	Paths []BGPPath
+	// OriginAS is the AS number of the origin of the route
 	OriginAS int
 }
 type BGPPath struct {
