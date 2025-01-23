@@ -89,7 +89,7 @@ func (rm *RouteManager) Start() error {
 	defer cancel()
 	rm.Graph, err = finder.NewGraph(ctx)
 	if err != nil {
-		return fmt.Errorf("error initializing graph: %w", err)
+		rm.logger.Errorf("error initializing graph: %v", err)
 	}
 
 	// Initial run

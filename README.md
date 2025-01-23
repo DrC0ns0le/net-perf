@@ -10,6 +10,8 @@ A full-mesh WireGuard mesh network is constructed, where each node has a direct 
 
 The net-perf service is responsible for monitoring the network performance of all network paths, and then dynamically optimises the routing to provide the best network performance possible.
 
+For generation of the WireGuard configuration files, you can use the following project [wg-mesh-dynamic-v2](https://github.com/DrC0ns0le/wg-mesh-dynamic-v2).
+
 ## Features
 
 - Continuous network performance monitoring
