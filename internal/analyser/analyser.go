@@ -11,7 +11,10 @@ import (
 
 	"github.com/DrC0ns0le/net-perf/internal/measure/pathping"
 	"github.com/DrC0ns0le/net-perf/internal/route/finder"
+	measurepb "github.com/DrC0ns0le/net-perf/pkg/pb/measure"
 	pb "github.com/DrC0ns0le/net-perf/pkg/pb/networkanalysis"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Path struct {
@@ -35,10 +38,7 @@ func NewNetworkAnalyzer() *NetworkAnalyzer {
 	}
 }
 
-func (na *NetworkAnalyzer) CreateGraph() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+func (na *NetworkAnalyzer) CreateGraph(ctx context.Context) error {
 	graph, err := finder.NewGraph(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create graph: %w", err)
@@ -161,7 +161,8 @@ func (na *NetworkAnalyzer) findRelevantCycles() ([]Path, error) {
 		wg.Add(1)
 		go func(path Path) {
 			defer wg.Done()
-			result, err := na.ppClient.Measure(path.Nodes)
+			log.Printf("Measuring path %v", path.Nodes)
+			result, err := measurePathLatency(path.Nodes)
 			if err != nil {
 				log.Printf("Skipping path %v due to measurement error: %v", path.Nodes, err)
 				return
@@ -172,10 +173,12 @@ func (na *NetworkAnalyzer) findRelevantCycles() ([]Path, error) {
 			measuredPaths = append(measuredPaths, Path{
 				Nodes:    path.Nodes,
 				Segments: generateSegments(path.Nodes),
-				Cost:     float64(result.Duration.Microseconds()) / 1000.0,
+				Cost:     result / 1000.0,
 			})
 		}(path)
 	}
+
+	wg.Wait()
 
 	if len(measuredPaths) == 0 {
 		return nil, fmt.Errorf("no measurable cycles found")
@@ -319,4 +322,38 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// measurePathLatency measures the latency of a given path and returns it in microseconds.
+// The path is given as a slice of integers representing the nodes of the path.
+// The function returns an error if there is an issue connecting to the sites
+// in the path or if there is an issue with the RPC.
+func measurePathLatency(path []int) (float64, error) {
+	measurementPath := func(p []int) []int32 {
+		np := make([]int32, len(p))
+		for i, v := range p {
+			np[i] = int32(v)
+		}
+		return np
+	}(path)
+
+	conn, err := grpc.NewClient(fmt.Sprintf("10.201.%d.1:%d", path[0], 5122), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return 0, fmt.Errorf("error connecting to site %d daemon: %w", path[0], err)
+	}
+	defer conn.Close()
+
+	client := measurepb.NewMeasureClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	r, err := client.PathLatency(ctx, &measurepb.PathLatencyRequest{
+		Path:     measurementPath,
+		Count:    30,
+		Interval: 150,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return float64(r.Latency), nil
 }

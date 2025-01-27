@@ -7,7 +7,7 @@ BINARY_DIR=bin
 
 # Generate protobuf code
 proto:
-	for dir in management measure networkanalyser; do \
+	for dir in management measure networkanalysis; do \
 		mkdir -p pkg/pb/$$dir; \
 		protoc \
 			--go_out=. \
@@ -27,7 +27,7 @@ build: proto
 # Clean generated files and binaries
 clean:
 	rm -f $(BINARY_DIR)/*
-	for dir in management measure networkanalyser; do \
+	for dir in management measure networkanalysis; do \
 		rm -f proto/$$dir/*.pb.go; \
 	done
 	

@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v3.12.4
-// source: proto/networkanalyser/networkanalyser.proto
+// source: proto/networkanalysis/networkanalysis.proto
 
 package networkanalysis
 
@@ -117,5 +117,5 @@ var NetworkAnalyzer_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/networkanalyser/networkanalyser.proto",
+	Metadata: "proto/networkanalysis/networkanalysis.proto",
 }
