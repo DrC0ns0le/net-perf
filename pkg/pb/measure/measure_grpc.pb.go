@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v3.12.4
-// source: proto/management/measure.proto
+// source: proto/measure/measure.proto
 
 package measure
 
@@ -117,5 +117,5 @@ var Measure_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/management/measure.proto",
+	Metadata: "proto/measure/measure.proto",
 }

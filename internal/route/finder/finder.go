@@ -64,6 +64,20 @@ func NewGraph(ctx context.Context) (*Graph, error) {
 	return g, nil
 }
 
+func NewGraphFromMatrix(matrix [][]float64) *Graph {
+	return &Graph{
+		size:   len(matrix),
+		matrix: matrix,
+		prev:   make([]int, len(matrix)),
+	}
+}
+
+func (g *Graph) GetMatrix() [][]float64 {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.matrix
+}
+
 // RefreshWeights refreshes all the weights in the graph
 func (g *Graph) RefreshWeights(ctx context.Context) error {
 	g.mu.Lock()
