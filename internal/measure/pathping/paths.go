@@ -1,26 +1,22 @@
 package pathping
 
 import (
-	"context"
-	"fmt"
-	"strconv"
-
-	"github.com/DrC0ns0le/net-perf/internal/metrics"
+	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 )
 
-func GetAllPeers(ctx context.Context) ([]int, error) {
-	response, err := metrics.QueryRange(ctx, "now-1d", "now", "1d", "avg(network_latency_status) by (source)")
+func GetAllPeers() (map[int][]int, error) {
+	wgIfs, err := netctl.GetAllWGInterfacesFromConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	var peers []int
-	for _, result := range response.Data.Result {
-		src, err := strconv.Atoi(result.Metric.Source)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing source: %w", err)
+	peers := make(map[int][]int)
+	for _, iface := range wgIfs {
+		if _, ok := peers[iface.RemoteIDInt]; !ok {
+			peers[iface.RemoteIDInt] = []int{iface.IPVersionInt}
 		}
-		peers = append(peers, src)
+		peers[iface.RemoteIDInt] = append(peers[iface.RemoteIDInt], iface.IPVersionInt)
 	}
+
 	return peers, nil
 }

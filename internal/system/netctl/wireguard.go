@@ -5,18 +5,24 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
+var (
+	wgPattern = regexp.MustCompile(`^wg(\d+)\.(\d+)_v(\d+)$`)
+)
+
 type WGInterface struct {
-	Name        string
-	LocalID     string
-	LocalIDInt  int
-	RemoteID    string
-	RemoteIDInt int
-	IPVersion   string
+	Name         string
+	LocalID      string
+	LocalIDInt   int
+	RemoteID     string
+	RemoteIDInt  int
+	IPVersion    string
+	IPVersionInt int
 }
 
 func GetOutgoingWGInterface(dst string) string {
@@ -99,8 +105,11 @@ func GetWGRouteTable() ([]Route, error) {
 }
 
 func ParseWGInterface(iface string) (WGInterface, error) {
-	wgPattern := regexp.MustCompile(`^wg(\d+)\.(\d+)_v(\d+)$`)
+	if !strings.HasPrefix(iface, "wg") {
+		return WGInterface{}, fmt.Errorf("valid wireguard interface name must start with wg: %s", iface)
+	}
 
+	// TODO: potentially use string splitting instead
 	matches := wgPattern.FindStringSubmatch(iface)
 
 	if len(matches) != 4 {
@@ -117,13 +126,19 @@ func ParseWGInterface(iface string) (WGInterface, error) {
 		return WGInterface{}, fmt.Errorf("error parsing remote ID: %v", err)
 	}
 
+	ipVersion, err := strconv.Atoi(matches[3])
+	if err != nil {
+		return WGInterface{}, fmt.Errorf("error parsing IP version: %v", err)
+	}
+
 	return WGInterface{
-		Name:        iface,
-		LocalID:     matches[1],
-		LocalIDInt:  localID,
-		RemoteID:    matches[2],
-		RemoteIDInt: remoteID,
-		IPVersion:   matches[3],
+		Name:         iface,
+		LocalID:      matches[1],
+		LocalIDInt:   localID,
+		RemoteID:     matches[2],
+		RemoteIDInt:  remoteID,
+		IPVersion:    matches[3],
+		IPVersionInt: ipVersion,
 	}, nil
 }
 
@@ -150,6 +165,32 @@ func GetAllWGInterfaces() ([]WGInterface, error) {
 	}
 
 	return wgIfs, nil
+}
+
+func GetAllWGInterfacesFromConfig() ([]WGInterface, error) {
+	configDir := "/etc/wireguard"
+	pattern := "*.conf"
+
+	files, err := filepath.Glob(filepath.Join(configDir, pattern))
+	if err != nil {
+		return nil, fmt.Errorf("error reading WireGuard config directory: %v", err)
+	}
+
+	var wgInterfaces []WGInterface
+
+	for _, file := range files {
+		baseName := filepath.Base(file)
+		interfaceName := strings.TrimSuffix(baseName, ".conf")
+
+		wgIface, err := ParseWGInterface(interfaceName)
+		if err != nil {
+			// ignore invalid interfaces
+			continue
+		}
+		wgInterfaces = append(wgInterfaces, wgIface)
+	}
+
+	return wgInterfaces, nil
 }
 
 func GetLocalID() (string, error) {

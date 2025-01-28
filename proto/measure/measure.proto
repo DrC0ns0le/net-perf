@@ -6,7 +6,8 @@ option go_package = "github.com/DrC0ns0le/net-perf/pkg/pb/measure;measure";
 message PathLatencyRequest {
     repeated int32 path = 1;
     int32 count = 2;
-    int32 interval = 3; // in ms
+    int32 interval = 3;
+    repeated int32 pathver = 4;
 }
 
 message PathLatencyResponse {
