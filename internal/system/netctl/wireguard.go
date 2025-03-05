@@ -216,6 +216,30 @@ func GetLocalID() (string, error) {
 	return "", fmt.Errorf("wg interface not found")
 }
 
+func GetAllPeerIDs() ([]int, error) {
+
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		fmt.Printf("Error getting interfaces: %v\n", err)
+		return nil, err
+	}
+
+	peerIDs := make([]int, 0)
+	for _, iface := range interfaces {
+		if strings.HasPrefix(iface.Name, "wg") {
+			// parse the interface name
+			wgIface, err := ParseWGInterface(iface.Name)
+			if err != nil {
+				continue
+			}
+
+			peerIDs = append(peerIDs, wgIface.RemoteIDInt)
+		}
+	}
+
+	return peerIDs, nil
+}
+
 func GetLocalLoopbackIP() ([]string, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {

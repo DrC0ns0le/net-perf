@@ -8,10 +8,12 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/DrC0ns0le/net-perf/internal/server/distributed"
 	"github.com/DrC0ns0le/net-perf/internal/server/management"
 	"github.com/DrC0ns0le/net-perf/internal/server/measure"
 	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
+	distributedpb "github.com/DrC0ns0le/net-perf/pkg/pb/distributed"
 	managementpb "github.com/DrC0ns0le/net-perf/pkg/pb/management"
 	measurepb "github.com/DrC0ns0le/net-perf/pkg/pb/measure"
 )
@@ -19,6 +21,8 @@ import (
 var grpcPort = flag.Int("grpc.port", 5122, "port for grpc server")
 
 type GRPCServer struct {
+	node *system.Node
+
 	port     int
 	server   *grpc.Server
 	listener net.Listener
@@ -27,6 +31,7 @@ type GRPCServer struct {
 
 func NewGRPCServer(global *system.Node) *GRPCServer {
 	return &GRPCServer{
+		node:   global,
 		port:   *grpcPort,
 		logger: global.Logger.With("component", "grpc"),
 	}
@@ -58,6 +63,7 @@ func (s *GRPCServer) Stop() error {
 }
 
 func (s *GRPCServer) register() {
-	managementpb.RegisterManagementServer(s.server, &management.Server{})
-	measurepb.RegisterMeasureServer(s.server, &measure.Server{})
+	managementpb.RegisterManagementServer(s.server, management.NewServer())
+	measurepb.RegisterMeasureServer(s.server, measure.NewServer(s.node))
+	distributedpb.RegisterRouteServiceServer(s.server, distributed.NewServer(s.node))
 }

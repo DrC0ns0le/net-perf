@@ -13,6 +13,10 @@ type Server struct {
 	pb.UnimplementedManagementServer
 }
 
+func NewServer() *Server {
+	return &Server{}
+}
+
 func (s *Server) GetRouteTable(ctx context.Context, req *pb.GetRouteTableRequest) (*pb.GetRouteTableResponse, error) {
 	routes, err := netctl.ListManagedRoutes(route.CustomRouteProtocol)
 	if err != nil {

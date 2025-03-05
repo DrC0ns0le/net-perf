@@ -72,7 +72,7 @@ func (w *routeWatchdog) checkSystemRTAlignment() bool {
 	}
 
 routeCheck:
-	for _, route := range w.routeTable.Routes {
+	for _, route := range w.routeTable.GetRoutes() {
 		key := fmt.Sprintf("%s_%v", route.Destination.String(), route.Gateway)
 
 		if _, exists := managedRoutes[key]; !exists {

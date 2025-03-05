@@ -7,7 +7,7 @@ BINARY_DIR=bin
 
 # Generate protobuf code
 proto:
-	for dir in management measure networkanalysis; do \
+	for dir in management measure networkanalysis distributed; do \
 		mkdir -p pkg/pb/$$dir; \
 		protoc \
 			--go_out=. \

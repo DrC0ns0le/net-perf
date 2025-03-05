@@ -19,7 +19,7 @@ import (
 
 var (
 	costContextTimeout = flag.Duration("router.timeout", 5*time.Second, "Timeout for route cost requests")
-	updateInterval     = flag.Duration("router.interval", 15*time.Minute, "Update interval in minutes")
+	updateInterval     = flag.Duration("router.interval", 3*time.Minute, "Update interval in minutes")
 )
 
 const (
@@ -39,19 +39,24 @@ type RouteManager struct {
 	Graph      *finder.Graph
 	graphReady bool
 	PathMapMu  sync.RWMutex
-	PathMap    map[string]net.IP
+	PathMap    map[string]net.IP // destination -> gateway
+
+	CentralisedRouter *CentralisedRouter
+	consensus         system.ConsensusInterface
 
 	// routing daemon interface
 	Router routers.Router
 
 	stopCh     chan struct{}
 	rtUpdateCh chan struct{}
+	roleCh     chan string
+	isLeader   bool
 
 	logger logging.Logger
 }
 
 func NewRouteManager(global *system.Node) *RouteManager {
-	return &RouteManager{
+	rm := &RouteManager{
 		siteID:              global.SiteID,
 		customRouteProtocol: netlink.RouteProtocol(CustomRouteProtocol),
 
@@ -61,10 +66,17 @@ func NewRouteManager(global *system.Node) *RouteManager {
 
 		Router: bird.NewRouter(),
 
+		consensus: global.ConsensusService,
+
 		stopCh:     global.StopCh,
 		rtUpdateCh: global.RTUpdateCh,
 		logger:     global.Logger,
 	}
+
+	// Inject interface
+	global.RouteService = rm
+
+	return rm
 }
 
 func (rm *RouteManager) Start() error {
@@ -91,6 +103,10 @@ func (rm *RouteManager) Start() error {
 	if err != nil {
 		rm.logger.Errorf("error initializing graph: %v", err)
 	}
+
+	// Initialize centralised router
+	rm.CentralisedRouter = NewCentralisedRouter(rm.logger, rm.Graph, rm.stopCh, rm.consensus, rm.siteID)
+	rm.CentralisedRouter.Start()
 
 	// Initial run
 	err = rm.UpdateRouteTable()
@@ -135,6 +151,16 @@ alignmentLoop:
 			if err := rm.SyncRouteTable(); err != nil {
 				rm.logger.Errorf("error syncing router route table: %v", err)
 			}
+		case role := <-rm.roleCh:
+			switch role {
+			case "leader":
+				rm.isLeader = true
+			case "follower":
+				rm.isLeader = false
+			default:
+				rm.logger.Errorf("unknown role: %s", role)
+				rm.isLeader = false
+			}
 		}
 	}
 	rm.run()
@@ -169,7 +195,8 @@ func (rm *RouteManager) SyncRouteTable() error {
 	var err error
 
 	if err = rm.SyncGraph(); err != nil {
-		return fmt.Errorf("error updating graph: %w", err)
+		rm.logger.Errorf("error syncing graph: %v", err)
+		rm.graphReady = false
 	}
 	if err = rm.UpdateRouteTable(); err != nil {
 		return fmt.Errorf("error updating route table: %w", err)
@@ -184,6 +211,12 @@ func (rm *RouteManager) SyncGraph() error {
 	var err error
 	ctx, cancel := context.WithTimeout(context.Background(), *costContextTimeout)
 	defer cancel()
+	if rm.Graph == nil {
+		rm.Graph, err = finder.NewGraph(ctx)
+		if err != nil {
+			return fmt.Errorf("error initializing graph: %w", err)
+		}
+	}
 	if err = rm.Graph.RefreshWeights(ctx); err != nil {
 		rm.logger.Errorf("error refreshing graph route weights: %v", err)
 		rm.graphReady = false
@@ -216,6 +249,13 @@ func (rm *RouteManager) UpdateRouteTable() error {
 	return nil
 }
 
+// addToRouteTable adds routes to the RouteTable, after running them through
+// the routing algorithms to select the best gateway.
+//
+// If the graph is ready, the graphBasedShortestPath algorithm is used. If
+// not, the selectLowestCostBGPPath algorithm is used.
+//
+// The function returns an error if any of the algorithms return an error.
 func (rm *RouteManager) addToRouteTable(route []routers.Route) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(len(route))**costContextTimeout)
 	defer cancel()
@@ -224,6 +264,11 @@ func (rm *RouteManager) addToRouteTable(route []routers.Route) error {
 			continue
 		} else {
 			// we need to handle this route, ie running through the routing algorithms to find the gw
+			if rm.CentralisedRouter != nil && rm.CentralisedRouter.updatedAt.After(time.Now().Add(-*updateInterval)) {
+				if err := rm.centralisedBestPath(ctx, r); err != nil {
+					return fmt.Errorf("error adding route via centralised route selection: %w", err)
+				}
+			}
 			if rm.graphReady {
 				if err := rm.graphBasedShortestPath(ctx, r); err != nil {
 					return fmt.Errorf("error selecting graph based shortest path: %w", err)

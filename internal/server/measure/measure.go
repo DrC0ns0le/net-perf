@@ -7,6 +7,7 @@ import (
 
 	"github.com/DrC0ns0le/net-perf/internal/analyser"
 	"github.com/DrC0ns0le/net-perf/internal/measure/pathping"
+	"github.com/DrC0ns0le/net-perf/internal/system"
 	pb "github.com/DrC0ns0le/net-perf/pkg/pb/measure"
 	analyserpb "github.com/DrC0ns0le/net-perf/pkg/pb/networkanalysis"
 	"google.golang.org/grpc"
@@ -15,6 +16,10 @@ import (
 
 type Server struct {
 	pb.UnimplementedMeasureServer
+}
+
+func NewServer(global *system.Node) *Server {
+	return &Server{}
 }
 
 func (s *Server) PathLatency(ctx context.Context, req *pb.PathLatencyRequest) (*pb.PathLatencyResponse, error) {
