@@ -21,6 +21,7 @@ func (s *Server) NewRaft() error {
 	fsm := &FSM{}
 	raftConfig := raft.DefaultConfig()
 	raftConfig.LocalID = raft.ServerID(strconv.Itoa(s.local))
+	raftConfig.LogLevel = "WARN"
 
 	// Create transport
 	addr, err := net.ResolveTCPAddr("tcp", s.listenAddr)

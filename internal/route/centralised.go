@@ -62,7 +62,7 @@ func (r *CentralisedRouter) Start() error {
 }
 
 func (r *CentralisedRouter) run() {
-	ticker := time.NewTicker(*updateInterval)
+	ticker := time.NewTicker(*updateInterval / 2)
 	for {
 		select {
 		case <-r.stopCh:
@@ -71,7 +71,7 @@ func (r *CentralisedRouter) run() {
 			if r.concensus != nil && r.concensus.Leader() && r.concensus.Healty() {
 				ctx, cancel := context.WithTimeout(context.Background(), 10**costContextTimeout)
 				defer cancel()
-				r.logger.Infof("centralised router updating and distributing routes")
+				r.logger.Debug("centralised router updating and distributing routes")
 				if err := r.Refresh(ctx); err != nil {
 					r.logger.Errorf("error refreshing centralised router: %v", err)
 
@@ -80,7 +80,7 @@ func (r *CentralisedRouter) run() {
 					r.logger.Errorf("error distributing centralised routes: %v", err)
 				}
 			} else {
-				r.logger.Infof("centralised router not leader or not healthy")
+				r.logger.Debug("centralised router not leader or not healthy")
 			}
 		}
 	}
@@ -233,7 +233,7 @@ func (r *CentralisedRouter) Distribute(ctx context.Context) error {
 
 		client := pb.NewRouteServiceClient(conn)
 
-		r.logger.Infof("distributing routes for site %d", site)
+		r.logger.Debugf("distributing routes for site %d", site)
 
 		_, err = client.UpdateRoute(ctx, &pb.SiteRoute{
 			Route: convertToInt32Map(routes),
@@ -246,15 +246,47 @@ func (r *CentralisedRouter) Distribute(ctx context.Context) error {
 	return nil
 }
 
-// Updates the routes for a specific site.
+// UpdateSiteRoutes updates the routes for a specific site.
 // NOTE, this purges all other routes
 func (r *CentralisedRouter) UpdateSiteRoutes(site int, routes map[int]int) {
 	r.siteRoutesMu.Lock()
 	defer r.siteRoutesMu.Unlock()
+
+	// Check if routes actually changed
+	changed := true
+	if existing, ok := r.siteRoutes[site]; ok && len(existing) == len(routes) {
+		// Assume no changes until we find one
+		changed = false
+
+		// Check each route
+		for k, v := range routes {
+			if existing[k] != v {
+				changed = true
+				break
+			}
+		}
+
+		// Check if all keys in existing are in routes
+		if !changed {
+			for k := range existing {
+				if _, ok := routes[k]; !ok {
+					changed = true
+					break
+				}
+			}
+		}
+	}
+
+	// Update the routes
 	r.siteRoutes = map[int]map[int]int{
 		site: routes,
 	}
 	r.updatedAt = time.Now()
+
+	if changed {
+		r.logger.Infof("centralised route table updated %v",
+			routes)
+	}
 }
 
 func (r *CentralisedRouter) measurePathLatency(path []int) (int, error) {

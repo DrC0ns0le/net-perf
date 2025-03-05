@@ -10,6 +10,5 @@ func (rm *RouteManager) GetSiteRoutes(site int) map[int]int {
 
 func (rm *RouteManager) UpdateLocalRoutes(routes map[int]int) {
 	rm.CentralisedRouter.UpdateSiteRoutes(rm.siteID, routes)
-	rm.logger.Infof("local routes updated: %v", routes)
 	rm.rtUpdateCh <- struct{}{}
 }

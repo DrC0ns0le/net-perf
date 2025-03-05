@@ -19,7 +19,7 @@ import (
 
 var (
 	costContextTimeout = flag.Duration("router.timeout", 5*time.Second, "Timeout for route cost requests")
-	updateInterval     = flag.Duration("router.interval", 3*time.Minute, "Update interval in minutes")
+	updateInterval     = flag.Duration("router.interval", 5*time.Minute, "Update interval in minutes")
 )
 
 const (
@@ -49,8 +49,6 @@ type RouteManager struct {
 
 	stopCh     chan struct{}
 	rtUpdateCh chan struct{}
-	roleCh     chan string
-	isLeader   bool
 
 	logger logging.Logger
 }
@@ -142,7 +140,9 @@ alignmentLoop:
 			return nil
 		case <-timer.C:
 			timer.Stop()
-			if err := rm.SyncRouteTable(); err != nil {
+			if rm.consensus.Leader() && rm.consensus.Healty() {
+				// Do nothing
+			} else if err := rm.SyncRouteTable(); err != nil {
 				rm.logger.Errorf("error syncing router route table: %v", err)
 			}
 			break alignmentLoop
@@ -150,16 +150,6 @@ alignmentLoop:
 			rm.logger.Debugf("triggering route table update")
 			if err := rm.SyncRouteTable(); err != nil {
 				rm.logger.Errorf("error syncing router route table: %v", err)
-			}
-		case role := <-rm.roleCh:
-			switch role {
-			case "leader":
-				rm.isLeader = true
-			case "follower":
-				rm.isLeader = false
-			default:
-				rm.logger.Errorf("unknown role: %s", role)
-				rm.isLeader = false
 			}
 		}
 	}
@@ -178,9 +168,10 @@ func (rm *RouteManager) run() {
 		case <-rm.stopCh:
 			return
 		case <-ticker.C:
-			if err := rm.SyncRouteTable(); err != nil {
+			if rm.consensus.Leader() && rm.consensus.Healty() {
+				// Do nothing
+			} else if err := rm.SyncRouteTable(); err != nil {
 				rm.logger.Errorf("error syncing router route table: %v", err)
-				// Continue running even if there's an error
 			}
 		case <-rm.rtUpdateCh:
 			rm.logger.Infof("triggering route table update")
