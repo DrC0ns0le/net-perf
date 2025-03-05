@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package networkanalysis;
+
+option go_package = "github.com/DrC0ns0le/net-perf/pkg/pb/networkanalysis;networkanalysis";
+
+service NetworkAnalyzer {
+  rpc SolveMatrix (MatrixData) returns (SolutionResponse) {}
+}
+
+message MatrixData {
+  repeated double matrix = 1;      // Flattened matrix A
+  repeated double vector = 2;      // Vector b
+  int32 matrix_rows = 3;          // Number of rows in matrix A
+  int32 matrix_cols = 4;          // Number of columns in matrix A
+  int32 target_idx = 5;           // Index of target edge in the matrix
+}
+
+message SolutionResponse {
+  repeated double solution = 1;    // Solution vector x
+  bool success = 2;               // Whether the solution was found successfully
+  string error = 3;               // Error message if any
+}

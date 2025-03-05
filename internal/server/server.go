@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/DrC0ns0le/net-perf/internal/system"
+	"github.com/DrC0ns0le/net-perf/pkg/logging"
 )
 
 type Server interface {
@@ -16,6 +17,7 @@ type ServerManager struct {
 	stopCh  chan struct{}
 	errCh   chan error
 	servers []Server
+	logger  logging.Logger
 }
 
 func NewServerManager(global *system.Node) *ServerManager {
@@ -25,71 +27,62 @@ func NewServerManager(global *system.Node) *ServerManager {
 			NewGRPCServer(global),
 			NewHTTPServer(global),
 			NewSocketServer(global),
+			NewConcensusServer(global),
 		},
+		logger: global.Logger,
 	}
 }
 
 func (n *ServerManager) Start() error {
-	var wg sync.WaitGroup
-	wg.Add(len(n.servers))
-
 	// Start all servers
+	n.errCh = make(chan error, len(n.servers))
 	for _, s := range n.servers {
 		go func(s Server) {
-			defer wg.Done()
 			if err := s.Start(); err != nil {
 				n.errCh <- err
 			}
 		}(s)
 	}
 
-	// Close error channel when all servers have started
-	go func() {
-		wg.Wait()
-		close(n.errCh)
-	}()
+	for {
+		select {
+		case err := <-n.errCh:
+			// Log the error but continue running other servers
+			n.logger.Errorf("error starting server: %v", err)
 
-	// Collect start-up errors
-	var errors []error
-	for err := range n.errCh {
-		errors = append(errors, err)
-	}
+		case <-n.stopCh:
+			n.logger.Info("received stop signal, shutting down servers")
 
-	// If there were any start-up errors, return them
-	if len(errors) > 0 {
-		return fmt.Errorf("failed to start servers: %v", errors)
-	}
+			// Create a separate error channel for stop errors to avoid mixing with start errors
+			stopErrCh := make(chan error, len(n.servers))
 
-	// Wait for stop signal
-	<-n.stopCh
-
-	// Stop all servers
-	wg.Add(len(n.servers))
-	for _, s := range n.servers {
-		go func(s Server) {
-			defer wg.Done()
-			if err := s.Stop(); err != nil {
-				n.errCh <- err
+			var wg sync.WaitGroup
+			for _, s := range n.servers {
+				wg.Add(1)
+				go func(s Server) {
+					defer wg.Done()
+					if err := s.Stop(); err != nil {
+						n.logger.Errorf("error stopping server: %v", err)
+						stopErrCh <- err
+					}
+				}(s)
 			}
-		}(s)
+
+			// Wait for all stop attempts to complete
+			wg.Wait()
+			close(stopErrCh)
+
+			// Collect stop errors
+			var stopErrors []error
+			for err := range stopErrCh {
+				stopErrors = append(stopErrors, err)
+			}
+
+			if len(stopErrors) > 0 {
+				return fmt.Errorf("errors occurred while stopping servers: %v", stopErrors)
+			}
+
+			return nil
+		}
 	}
-
-	// Close error channel when all servers have stopped
-	go func() {
-		wg.Wait()
-		close(n.errCh)
-	}()
-
-	// Collect stop errors
-	errors = nil
-	for err := range n.errCh {
-		errors = append(errors, err)
-	}
-
-	// If there were any stop errors, return them
-	if len(errors) > 0 {
-		return fmt.Errorf("errors occurred while stopping servers: %v", errors)
-	}
-
-	return nil
 }

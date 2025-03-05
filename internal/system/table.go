@@ -6,7 +6,8 @@ import (
 )
 
 type RouteTable struct {
-	Routes []KernelRoute
+	// Map with destination IP network string as key
+	routeMap map[string]KernelRoute
 
 	mu       sync.RWMutex
 	updateMu sync.Mutex
@@ -19,21 +20,36 @@ type KernelRoute struct {
 	Gateway     net.IP
 }
 
+// NewRouteTable creates a new RouteTable with initialized map
+func NewRouteTable() *RouteTable {
+	return &RouteTable{
+		routeMap: make(map[string]KernelRoute),
+		ready:    false,
+	}
+}
+
 func (rt *RouteTable) AddRoute(destination *net.IPNet, gateway net.IP) {
 	rt.mu.Lock()
-	rt.Routes = append(rt.Routes, KernelRoute{Destination: destination, Gateway: gateway})
-	rt.mu.Unlock()
+	defer rt.mu.Unlock()
+
+	// Add route to map (will overwrite if destination already exists)
+	rt.routeMap[destination.String()] = KernelRoute{Destination: destination, Gateway: gateway}
 }
 
 func (rt *RouteTable) GetRoutes() []KernelRoute {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
-	return rt.Routes
+
+	routes := make([]KernelRoute, 0, len(rt.routeMap))
+	for _, route := range rt.routeMap {
+		routes = append(routes, route)
+	}
+	return routes
 }
 
 func (rt *RouteTable) ClearRoutes() {
 	rt.mu.Lock()
-	rt.Routes = []KernelRoute{}
+	rt.routeMap = make(map[string]KernelRoute)
 	rt.mu.Unlock()
 }
 

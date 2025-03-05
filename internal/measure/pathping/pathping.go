@@ -1,7 +1,6 @@
 package pathping
 
 import (
-	"context"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -20,7 +19,10 @@ var (
 	pathPingBuf               = flag.Int("pathping.buffer", 128, "buffer size for path ping server")
 	pathPingMax               = flag.Int("pathping.max", 16, "max number of hops for path ping")
 	pathPingTimeout           = flag.Duration("pathping.timeout", 1*time.Second, "timeout for path ping")
-	pathPingProcessingHistory = flag.Int("pathping.processing.history", 100, "number of processing durations to keep track of")
+	pathPingProcessingHistory = flag.Int("pathping.processing.history", 10, "number of processing durations to keep track of")
+
+	// Maximum possible packet size based on maximum path length
+	maxPacketSize = 26 + (*pathPingMax * 4) // Fixed header (26) + max array size (pathPingMax * 4), each uint16 takes 2 bytes(path & pathver)
 
 	// singleton
 	pathPingServer *PathPingServer
@@ -40,21 +42,21 @@ var (
 type Result struct {
 	Status   int
 	Protocol string
-	Path     []uint32
+	Path     []uint16
 	Duration time.Duration
 	Loss     float64
 }
 
 type result struct {
 	id          int64
-	path        []uint32
+	path        []uint16
 	duration    []time.Duration
 	lastUpdated time.Time
 }
 
 // Config contains the configuration for a mesh node
 type Config struct {
-	ID         uint32
+	ID         uint16
 	Port       int
 	BufferSize int
 	Logger     logging.Logger
@@ -64,7 +66,7 @@ type Config struct {
 type PathPingServer struct {
 	config    Config
 	listener  *net.UDPConn
-	peerAddrs map[uint32]*net.UDPAddr
+	peerAddrs map[uint16]map[uint16]*net.UDPAddr
 	active    bool
 	done      chan struct{}
 
@@ -77,13 +79,15 @@ type PathPingServer struct {
 
 // packet represents the internal measurement packet structure
 type packet struct {
-	ID         int64 // Unique test ID
-	Origin     uint32
-	CurrentHop uint32
-	Sequence   uint64
-	PathLength uint32
-	Path       []uint32
-	StartTime  int64 // Only used by origin node
+	ID         int64    // Unique test ID
+	Origin     uint16   // Origin node ID
+	CurrentHop uint16   // Current hop count
+	Sequence   uint16   // Sequence number
+	PathLength uint16   // Length of path
+	Status     uint16   // Status code
+	StartTime  int64    // Start time (origin node only)
+	Path       []uint16 // Path array
+	PathVer    []uint16 // Version information for each hop
 }
 
 // NewServer returns a new PathPingServer instance with the given config.
@@ -101,7 +105,7 @@ func NewServer(global *system.Node) *PathPingServer {
 	}
 
 	config := Config{
-		ID:         uint32(global.SiteID),
+		ID:         uint16(global.SiteID),
 		Port:       *pathPingPort,
 		BufferSize: *pathPingBuf,
 		Logger:     global.Logger.With("component", "pathping"),
@@ -109,7 +113,7 @@ func NewServer(global *system.Node) *PathPingServer {
 
 	s := &PathPingServer{
 		config:    config,
-		peerAddrs: make(map[uint32]*net.UDPAddr),
+		peerAddrs: make(map[uint16]map[uint16]*net.UDPAddr),
 		results:   make(map[string]*result),
 		done:      make(chan struct{}),
 
@@ -147,19 +151,27 @@ func (n *PathPingServer) Start() error {
 	}
 	n.listener = conn
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	peers, err := GetAllPeers(ctx)
+	peers, err := GetAllPeers()
 	if err != nil {
 		return fmt.Errorf("failed to get peers: %w", err)
 	}
 
-	for _, peer := range peers {
+	for peer, ver := range peers {
 		if peer == int(n.config.ID) {
 			continue
 		}
-		n.addPeer(uint32(peer), fmt.Sprintf("10.201.%d.1:%d", peer, n.config.Port))
+
+		// Add specific versions
+		for _, v := range ver {
+			if err := n.addPeer(uint16(peer), uint16(v), fmt.Sprintf("10.201.%d.%d:%d", peer, v, n.config.Port)); err != nil {
+				return err
+			}
+		}
+
+		// Add default version
+		if err := n.addPeer(uint16(peer), 0, fmt.Sprintf("10.201.%d.1:%d", peer, n.config.Port)); err != nil {
+			return err
+		}
 	}
 
 	n.active = true
@@ -170,12 +182,17 @@ func (n *PathPingServer) Start() error {
 	return nil
 }
 
-func (n *PathPingServer) addPeer(id uint32, addr string) error {
+func (n *PathPingServer) addPeer(id, ver uint16, addr string) error {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return fmt.Errorf("invalid peer address: %w", err)
 	}
-	n.peerAddrs[id] = udpAddr
+
+	if n.peerAddrs[id] == nil {
+		n.peerAddrs[id] = make(map[uint16]*net.UDPAddr)
+	}
+
+	n.peerAddrs[id][ver] = udpAddr
 	return nil
 }
 
@@ -183,6 +200,7 @@ func (n *PathPingServer) addPeer(id uint32, addr string) error {
 type MeasurementOptions struct {
 	Count    int           // Number of measurements to take
 	Interval time.Duration // Interval between measurements
+	PathVer  []uint16
 }
 
 // Measure sends a packet along the given path and measures the round-trip time.
@@ -193,7 +211,7 @@ type MeasurementOptions struct {
 //
 // The path must start with the local node ID and must be between 2 and
 // *pathPingMax (default 16) nodes long.
-func (n *PathPingServer) Measure(path []uint32, opts MeasurementOptions) (Result, error) {
+func (n *PathPingServer) Measure(path []uint16, opts MeasurementOptions) (Result, error) {
 	result := Result{
 		Status:   0,
 		Protocol: "pathping",
@@ -219,17 +237,36 @@ func (n *PathPingServer) Measure(path []uint32, opts MeasurementOptions) (Result
 		opts.Interval = 100 * time.Millisecond
 	}
 
+	if opts.PathVer != nil {
+		if len(opts.PathVer) != len(path) {
+			return result, fmt.Errorf("path version must be the same length as the path")
+		}
+
+		for _, v := range opts.PathVer {
+			if v != 0 && v != 4 && v != 6 {
+				return result, fmt.Errorf("invalid path version: must be 0, 4 or 6")
+			}
+		}
+	} else {
+		opts.PathVer = make([]uint16, len(path))
+		for i := range path {
+			opts.PathVer[i] = 0
+		}
+	}
+
 	startTime := time.Now()
-	for seq := uint64(0); seq < uint64(opts.Count); seq++ {
+	for seq := uint16(0); seq < uint16(opts.Count); seq++ {
 		p := packet{
 			ID:         startTime.UnixNano(),
 			Origin:     n.config.ID,
 			Sequence:   seq,
-			PathLength: uint32(len(path)),
+			PathLength: uint16(len(path)),
 			StartTime:  time.Now().UnixNano(),
-			Path:       make([]uint32, len(path)),
+			Path:       make([]uint16, len(path)),
+			PathVer:    make([]uint16, len(path)),
 		}
 		copy(p.Path[:], path)
+		copy(p.PathVer[:], opts.PathVer)
 
 		err := n.forwardPacket(&p, true)
 		if err != nil {
@@ -240,7 +277,7 @@ func (n *PathPingServer) Measure(path []uint32, opts MeasurementOptions) (Result
 
 	// Check for results
 	testID := fmt.Sprintf("%v-%v", path, startTime.UnixNano())
-	totalTimeout := time.Duration(opts.Count) * (opts.Interval + *pathPingTimeout*2)
+	totalTimeout := time.Duration(opts.Count)*(opts.Interval) + *pathPingTimeout
 	timeout := time.After(totalTimeout)
 
 	for {
@@ -266,7 +303,7 @@ func (n *PathPingServer) Measure(path []uint32, opts MeasurementOptions) (Result
 			if !ok {
 				// Results not ready, unlock and try again
 				n.resultsMu.Unlock()
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(opts.Interval / 2)
 				continue
 			}
 
@@ -356,7 +393,8 @@ func (n *PathPingServer) getAverageProcessingDuration() time.Duration {
 
 // listen for incoming packets and process them.
 func (n *PathPingServer) listen() {
-	buf := make([]byte, n.config.BufferSize)
+	// Allocate buffer with maximum possible size
+	buf := make([]byte, maxPacketSize)
 
 	for {
 		select {
@@ -365,18 +403,18 @@ func (n *PathPingServer) listen() {
 		default:
 			n.listener.SetReadDeadline(time.Now().Add(*pathPingTimeout))
 
+			// Read the complete UDP datagram
 			numBytes, _, err := n.listener.ReadFromUDP(buf)
 			if err != nil {
 				continue
 			}
 
-			if numBytes < 20 {
-				continue // Minimum packet size
-			}
-
-			p := n.deserializePacket(buf[:numBytes])
-			if p != nil {
+			// Process only the actual bytes received
+			p, err := deserializePacket(buf[:numBytes])
+			if err == nil {
 				n.processPacket(p)
+			} else {
+				n.config.Logger.Debugf("Failed to deserialize packet: %v", err)
 			}
 		}
 	}
@@ -396,7 +434,7 @@ func (n *PathPingServer) processPacket(p *packet) {
 		if p.Origin == n.config.ID {
 			rtt := time.Duration(time.Now().UnixNano() - p.StartTime)
 
-			path := make([]uint32, p.PathLength)
+			path := make([]uint16, p.PathLength)
 			copy(path, p.Path[:p.PathLength])
 
 			testID := fmt.Sprintf("%v-%v", path, p.ID)
@@ -443,63 +481,94 @@ func (n *PathPingServer) forwardPacket(p *packet, isOrigin bool) error {
 
 	p.StartTime += n.getAverageProcessingDuration().Nanoseconds()
 
-	// Forward to next hop
 	nextHop := p.Path[p.CurrentHop+1]
-	nextAddr, exists := n.peerAddrs[nextHop]
+	nextHopVer := p.PathVer[p.CurrentHop+1]
+	nextAddr, exists := n.peerAddrs[nextHop][nextHopVer]
 	if !exists {
 		return fmt.Errorf("peer %v not found", nextHop)
 	}
 
-	buf := n.serializePacket(p)
+	buf := p.serialize()
 	_, err := n.listener.WriteToUDP(buf, nextAddr)
-
 	return err
 }
 
-func (n *PathPingServer) serializePacket(p *packet) []byte {
-	buf := make([]byte, n.config.BufferSize)
+// calculatePacketSize calculates the required buffer size for a packet
+func (p *packet) calculatePacketSize() int {
+	headerSize := 26                   // Fixed header size: ID(8) + Origin(2) + CurrentHop(2) + Sequence(2) + PathLength(2) + Status(2) + StartTime(8)
+	arraySize := int(p.PathLength) * 4 // Each uint16 array element takes 2 bytes, and we have two arrays (Path and PathVer)
+	return headerSize + arraySize
+}
 
-	// Add ID field at the start (int64 - 8 bytes)
+// serializePacket serializes a packet into a byte slice
+func (p *packet) serialize() []byte {
+	size := p.calculatePacketSize()
+	buf := make([]byte, size)
+
+	// Write fixed-size fields
 	binary.LittleEndian.PutUint64(buf[0:], uint64(p.ID))
+	binary.LittleEndian.PutUint16(buf[8:], p.Origin)
+	binary.LittleEndian.PutUint16(buf[10:], p.CurrentHop)
+	binary.LittleEndian.PutUint16(buf[12:], p.Sequence)
+	binary.LittleEndian.PutUint16(buf[14:], p.PathLength)
+	binary.LittleEndian.PutUint16(buf[16:], p.Status)
+	binary.LittleEndian.PutUint64(buf[18:], uint64(p.StartTime))
 
-	// Shift all other fields by 8 bytes
-	binary.LittleEndian.PutUint32(buf[8:], p.Origin)
-	binary.LittleEndian.PutUint32(buf[12:], p.CurrentHop)
-	binary.LittleEndian.PutUint64(buf[16:], p.Sequence)
-	binary.LittleEndian.PutUint32(buf[24:], p.PathLength)
-	binary.LittleEndian.PutUint64(buf[28:], uint64(p.StartTime))
+	offset := 26
 
-	// Path array starts 8 bytes later than before
+	// Write variable-length arrays
 	for i := 0; i < int(p.PathLength); i++ {
-		offset := 36 + (i * 4)
-		binary.LittleEndian.PutUint32(buf[offset:], p.Path[i])
+		binary.LittleEndian.PutUint16(buf[offset:], p.Path[i])
+		offset += 2
+	}
+	for i := 0; i < int(p.PathLength); i++ {
+		binary.LittleEndian.PutUint16(buf[offset:], p.PathVer[i])
+		offset += 2
 	}
 
 	return buf
 }
 
-func (n *PathPingServer) deserializePacket(buf []byte) *packet {
-	var p packet
+// deserializePacket deserializes a byte slice into a packet
+func deserializePacket(buf []byte) (*packet, error) {
+	if len(buf) < 26 { // Minimum size for fixed fields
+		return nil, fmt.Errorf("packet too small: %d bytes", len(buf))
+	}
 
-	// Read ID field first
+	p := &packet{}
+
+	// Read fixed-size fields
 	p.ID = int64(binary.LittleEndian.Uint64(buf[0:]))
+	p.Origin = binary.LittleEndian.Uint16(buf[8:])
+	p.CurrentHop = binary.LittleEndian.Uint16(buf[10:])
+	p.Sequence = binary.LittleEndian.Uint16(buf[12:])
+	p.PathLength = binary.LittleEndian.Uint16(buf[14:])
+	p.Status = binary.LittleEndian.Uint16(buf[16:])
+	p.StartTime = int64(binary.LittleEndian.Uint64(buf[18:]))
 
-	// Shift all other fields by 8 bytes
-	p.Origin = binary.LittleEndian.Uint32(buf[8:])
-	p.CurrentHop = binary.LittleEndian.Uint32(buf[12:])
-	p.Sequence = binary.LittleEndian.Uint64(buf[16:])
-	p.PathLength = binary.LittleEndian.Uint32(buf[24:])
-	p.StartTime = int64(binary.LittleEndian.Uint64(buf[28:]))
-
-	if p.PathLength > uint32(*pathPingMax) {
-		return nil
+	// Validate PathLength
+	if p.PathLength > uint16(*pathPingMax) {
+		return nil, fmt.Errorf("invalid path length: %d", p.PathLength)
 	}
 
-	p.Path = make([]uint32, p.PathLength)
+	expectedSize := 26 + (int(p.PathLength) * 4) // Fixed size + array sizes
+	if len(buf) < expectedSize {
+		return nil, fmt.Errorf("packet too small for path length: expected %d, got %d", expectedSize, len(buf))
+	}
+
+	// Initialize and read variable-length arrays
+	p.Path = make([]uint16, p.PathLength)
+	p.PathVer = make([]uint16, p.PathLength)
+
+	offset := 26
 	for i := 0; i < int(p.PathLength); i++ {
-		offset := 36 + (i * 4)
-		p.Path[i] = binary.LittleEndian.Uint32(buf[offset:])
+		p.Path[i] = binary.LittleEndian.Uint16(buf[offset:])
+		offset += 2
+	}
+	for i := 0; i < int(p.PathLength); i++ {
+		p.PathVer[i] = binary.LittleEndian.Uint16(buf[offset:])
+		offset += 2
 	}
 
-	return &p
+	return p, nil
 }

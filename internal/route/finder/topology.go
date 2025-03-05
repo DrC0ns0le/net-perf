@@ -15,7 +15,7 @@ type NetworkPath struct {
 
 func GetAllPaths(ctx context.Context) ([]NetworkPath, error) {
 
-	response, err := metrics.QueryRange(ctx, "now-1d", "now", "1d", "avg(network_latency_status) by (source, target)")
+	response, err := metrics.QueryRange(ctx, "now-15m", "now", "15m", "avg(network_latency_status) by (source, target)")
 	if err != nil {
 		return nil, err
 	}

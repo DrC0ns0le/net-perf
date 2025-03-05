@@ -1,9 +1,5 @@
 package finder
 
-import (
-	"container/heap"
-)
-
 // An Route is something we manage in a priority queue.
 type Route struct {
 	node     int     // node id
@@ -43,11 +39,4 @@ func (pq *PriorityQueue) Pop() any {
 	item.index = -1 // for safety
 	*pq = old[0 : n-1]
 	return item
-}
-
-// update modifies the priority and value of an Route in the queue.
-func (pq *PriorityQueue) update(item *Route, node int, distance float64) {
-	item.node = node
-	item.distance = distance
-	heap.Fix(pq, item.index)
 }

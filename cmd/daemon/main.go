@@ -21,10 +21,6 @@ var (
 	updateChBufSize = flag.Int("wg.updatech", 0, "channel buffer size for wg interface updates")
 )
 
-type DaemonService interface {
-	Start() error
-}
-
 func main() {
 
 	flag.Parse()
@@ -35,9 +31,7 @@ func main() {
 		RTUpdateCh:      make(chan struct{}, *updateChBufSize),
 		MeasureUpdateCh: make(chan struct{}, *updateChBufSize),
 
-		RouteTable: &system.RouteTable{
-			Routes: make([]system.KernelRoute, 0),
-		},
+		RouteTable: system.NewRouteTable(),
 
 		Logger: logging.NewDefaultLogger(),
 	}
@@ -54,19 +48,24 @@ func main() {
 		node.Logger.Fatalf("failed to get local id: %v", err)
 	}
 
+	node.Peers, err = netctl.GetAllPeerIDs()
+	if err != nil {
+		node.Logger.Fatalf("failed to get all peer ids: %v", err)
+	}
+
 	node.SiteID, err = strconv.Atoi(siteID)
 	if err != nil {
 		node.Logger.Fatalf("failed to convert local id to int: %v", err)
 	}
 
-	service := []DaemonService{
-		server.NewServerManager(node),
-		measure.NewManager(node),
-		route.NewRouteManager(node),
+	node.Services = map[string]system.Service{
+		"server":  server.NewServerManager(node),
+		"measure": measure.NewManager(node),
+		"route":   route.NewRouteManager(node),
 	}
 
-	for _, s := range service {
-		go func(s DaemonService) {
+	for _, s := range node.Services {
+		go func(s system.Service) {
 			err = s.Start()
 			if err != nil {
 				node.Logger.Errorf("failed to start service: %v", err)

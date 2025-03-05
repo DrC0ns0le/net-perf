@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v3.12.4
-// source: proto/management/measure.proto
+// source: proto/measure/measure.proto
 
 package measure
 
@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Measure_PathLatency_FullMethodName = "/measure.Measure/PathLatency"
+	Measure_PathLatency_FullMethodName        = "/measure.Measure/PathLatency"
+	Measure_ProjectPathLatency_FullMethodName = "/measure.Measure/ProjectPathLatency"
 )
 
 // MeasureClient is the client API for Measure service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MeasureClient interface {
 	PathLatency(ctx context.Context, in *PathLatencyRequest, opts ...grpc.CallOption) (*PathLatencyResponse, error)
+	ProjectPathLatency(ctx context.Context, in *ProjectedPathLatencyRequest, opts ...grpc.CallOption) (*ProjectedPathLatencyResponse, error)
 }
 
 type measureClient struct {
@@ -47,11 +49,22 @@ func (c *measureClient) PathLatency(ctx context.Context, in *PathLatencyRequest,
 	return out, nil
 }
 
+func (c *measureClient) ProjectPathLatency(ctx context.Context, in *ProjectedPathLatencyRequest, opts ...grpc.CallOption) (*ProjectedPathLatencyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProjectedPathLatencyResponse)
+	err := c.cc.Invoke(ctx, Measure_ProjectPathLatency_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MeasureServer is the server API for Measure service.
 // All implementations must embed UnimplementedMeasureServer
 // for forward compatibility.
 type MeasureServer interface {
 	PathLatency(context.Context, *PathLatencyRequest) (*PathLatencyResponse, error)
+	ProjectPathLatency(context.Context, *ProjectedPathLatencyRequest) (*ProjectedPathLatencyResponse, error)
 	mustEmbedUnimplementedMeasureServer()
 }
 
@@ -64,6 +77,9 @@ type UnimplementedMeasureServer struct{}
 
 func (UnimplementedMeasureServer) PathLatency(context.Context, *PathLatencyRequest) (*PathLatencyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PathLatency not implemented")
+}
+func (UnimplementedMeasureServer) ProjectPathLatency(context.Context, *ProjectedPathLatencyRequest) (*ProjectedPathLatencyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ProjectPathLatency not implemented")
 }
 func (UnimplementedMeasureServer) mustEmbedUnimplementedMeasureServer() {}
 func (UnimplementedMeasureServer) testEmbeddedByValue()                 {}
@@ -104,6 +120,24 @@ func _Measure_PathLatency_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Measure_ProjectPathLatency_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProjectedPathLatencyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MeasureServer).ProjectPathLatency(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Measure_ProjectPathLatency_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MeasureServer).ProjectPathLatency(ctx, req.(*ProjectedPathLatencyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Measure_ServiceDesc is the grpc.ServiceDesc for Measure service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -115,7 +149,11 @@ var Measure_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "PathLatency",
 			Handler:    _Measure_PathLatency_Handler,
 		},
+		{
+			MethodName: "ProjectPathLatency",
+			Handler:    _Measure_ProjectPathLatency_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/management/measure.proto",
+	Metadata: "proto/measure/measure.proto",
 }

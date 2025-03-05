@@ -149,6 +149,56 @@ func (rm *RouteManager) graphBasedShortestPath(ctx context.Context, route router
 	return nil
 }
 
+func (rm *RouteManager) centralisedBestPath(_ context.Context, route routers.Route) error {
+	// routes are stored in the centralised route table for each site in rm.CentralisedRouter.siteRoutes[rm.siteID]
+
+	originAS := route.OriginAS
+	cost := math.Inf(1)
+
+	// special case for ASes outside of ASes 64512-64999
+	if originAS < 64512 || originAS >= 65000 {
+		for _, path := range route.Paths {
+			// ignore route where local AS is the origin(shown by network interface name)
+			if strings.HasPrefix(path.Interface, "en") {
+				return nil
+			}
+			if len(path.ASPath) < 2 {
+				continue
+			}
+			_, c, err := rm.Graph.GetShortestPath(asToSiteID(rm.Config.ASNumber), asToSiteID(path.ASPath[len(path.ASPath)-2]))
+			if err != nil {
+				return fmt.Errorf("error getting shortest path: %w", err)
+			}
+			if c < cost {
+				cost = c
+				originAS = path.ASPath[len(path.ASPath)-2]
+			}
+		}
+		if originAS < 64512 || originAS >= 65000 {
+			return fmt.Errorf("no origin AS found")
+		}
+	}
+
+	gw, err := rm.findSiteGW(func() string {
+		if route.Network.IP.To4() == nil {
+			return "v6"
+		} else {
+			return "v4"
+		}
+	}(), rm.CentralisedRouter.siteRoutes[rm.siteID][asToSiteID(originAS)])
+	if err != nil {
+		return fmt.Errorf("error finding site gw: %w", err)
+	}
+
+	rm.RouteTable.AddRoute(route.Network, gw)
+
+	return nil
+}
+
+// findSiteGW returns the gateway IP of a route that goes via the given site ID
+// and is of the given mode (v4 or v6). If no route is found, it returns an error.
+// It is used to help select the best gateway for a route in the graphBasedShortestPath
+// algorithm.
 func (rm *RouteManager) findSiteGW(mode string, via int) (net.IP, error) {
 	routes, _, err := rm.Router.GetRoutes(mode)
 	if err != nil {
