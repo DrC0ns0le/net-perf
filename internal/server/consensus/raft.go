@@ -137,7 +137,7 @@ func (s *Server) ensureAllPeersInCluster() {
 		// Check if peer is already in the cluster
 		peerIDStr := fmt.Sprintf("%d", peerID)
 		if existingServers[peerIDStr] {
-			s.logger.Info("Peer already in cluster", "peerID", peerID)
+			s.logger.Debugf("Peer already in cluster", "peerID", peerID)
 			continue
 		}
 

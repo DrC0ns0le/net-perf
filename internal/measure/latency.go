@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/measure/latency"
@@ -48,15 +49,17 @@ func startLatencyWorker(worker *Worker) {
 	}
 
 	worker.logger.Debugf("Starting latency measurement on %s\n", worker.iface.Name)
+	wg := &sync.WaitGroup{}
+	workerCtx, workerCancel := context.WithCancel(context.Background())
 	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			ctx, _ := context.WithTimeout(workerCtx, 5*time.Second)
 
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				// measure
 				data, err := test.MeasureTCP(ctx, worker.targetPort)
 				if err != nil {
@@ -67,7 +70,9 @@ func startLatencyWorker(worker *Worker) {
 				generateLatencyMetrics(data, worker.iface)
 			}()
 
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				data, err := test.MeasureICMP(ctx)
 				if err != nil {
 					worker.logger.Errorf("error measuring ICMP latency: %v", err)
@@ -80,6 +85,11 @@ func startLatencyWorker(worker *Worker) {
 
 		case <-worker.stopCh:
 			worker.logger.Info("stopping latency measurement")
+
+			// stop all measurements
+			ticker.Stop()
+			workerCancel()
+			wg.Wait()
 
 			// remove worker metrics
 			err := unregisterLatencyMetrics(worker.iface)

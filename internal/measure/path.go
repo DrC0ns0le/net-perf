@@ -3,6 +3,7 @@ package measure
 import (
 	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/measure/pathping"
@@ -37,15 +38,17 @@ func startPathLatencyWorker(worker *Worker) {
 	time.Sleep(randSleep)
 
 	worker.logger.Debugf("Starting path latency measurement for %s\n", worker.iface.RemoteID)
+	wg := &sync.WaitGroup{}
 	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
 
 	ppClient := pathping.NewClient(10, 250*time.Millisecond)
 	path := []int{worker.iface.LocalIDInt, worker.iface.RemoteIDInt, worker.iface.LocalIDInt}
 	for {
 		select {
 		case <-ticker.C:
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				data, err := ppClient.Measure(path)
 				if err != nil {
 					worker.logger.Errorf("error measuring path latency: %v", err)
@@ -56,6 +59,10 @@ func startPathLatencyWorker(worker *Worker) {
 
 		case <-worker.stopCh:
 			worker.logger.Info("stopping latency measurement")
+
+			// stop all measurements
+			ticker.Stop()
+			wg.Wait()
 
 			// remove worker metrics
 			err := unregisterPathLatencyMetrics(worker.iface)
