@@ -140,8 +140,10 @@ alignmentLoop:
 			return nil
 		case <-timer.C:
 			timer.Stop()
-			if rm.consensus.Leader() && rm.consensus.Healty() {
-				// Do nothing
+			if rm.CentralisedRouter != nil && rm.CentralisedRouter.updatedAt.After(time.Now().Add(-*updateInterval)) {
+				// This means that route table update was already triggered by centralised router
+				// No need to update
+				rm.logger.Debugf("skipping route table update as centralised router has updated the route table recently")
 			} else if err := rm.SyncRouteTable(); err != nil {
 				rm.logger.Errorf("error syncing router route table: %v", err)
 			}
@@ -168,8 +170,10 @@ func (rm *RouteManager) run() {
 		case <-rm.stopCh:
 			return
 		case <-ticker.C:
-			if rm.consensus.Leader() && rm.consensus.Healty() {
-				// Do nothing
+			if rm.CentralisedRouter != nil && rm.CentralisedRouter.updatedAt.After(time.Now().Add(-*updateInterval)) {
+				// This means that route table update was already triggered by centralised router
+				// No need to update
+				rm.logger.Debugf("skipping route table update as centralised router has updated the route table recently")
 			} else if err := rm.SyncRouteTable(); err != nil {
 				rm.logger.Errorf("error syncing router route table: %v", err)
 			}

@@ -21,8 +21,9 @@ var (
 )
 
 type SocketServer struct {
-	WGUpdateCh chan netctl.WGInterface
-	socketPath string
+	wgUpdateCh      chan netctl.WGInterface
+	measureUpdateCh chan struct{}
+	socketPath      string
 
 	listener net.Listener
 	logger   logging.Logger
@@ -30,7 +31,9 @@ type SocketServer struct {
 
 func NewSocketServer(global *system.Node) *SocketServer {
 	return &SocketServer{
-		WGUpdateCh: global.WGUpdateCh,
+		wgUpdateCh:      global.WGUpdateCh,
+		measureUpdateCh: global.MeasureUpdateCh,
+
 		socketPath: *socketPath,
 		logger:     global.Logger.With("component", "socket"),
 	}
@@ -90,8 +93,11 @@ func (s *SocketServer) handleConnection(conn net.Conn) {
 		message = strings.TrimSpace(message)
 		s.logger.Infof("received message from socket: %s", message)
 
-		if strings.HasPrefix(message, "wg") {
-			wgIface, err := netctl.ParseWGInterface(message)
+		switch {
+		case strings.HasPrefix(message, "WGADD"):
+			// parse the wg interface
+			ifname := strings.TrimPrefix(message, "WGADD")
+			wgIface, err := netctl.ParseWGInterface(strings.TrimSpace(ifname))
 			if err != nil {
 				s.logger.Errorf("error parsing wg interface: %v", err)
 				conn.Write([]byte(fmt.Sprintf("ERROR: %v\n", err)))
@@ -99,12 +105,19 @@ func (s *SocketServer) handleConnection(conn net.Conn) {
 			}
 
 			select {
-			case s.WGUpdateCh <- wgIface:
+			case s.wgUpdateCh <- wgIface:
 				conn.Write([]byte("OK\n"))
 			case <-time.After(*socketConnectionTimeout):
 				conn.Write([]byte("ERROR: timeout writing to channel\n"))
 			}
-		} else {
+		case strings.HasPrefix(message, "WGRESTART"):
+			select {
+			case s.measureUpdateCh <- struct{}{}:
+				conn.Write([]byte("OK\n"))
+			case <-time.After(*socketConnectionTimeout):
+				conn.Write([]byte("ERROR: timeout writing to channel\n"))
+			}
+		default:
 			conn.Write([]byte("ERROR: invalid message format\n"))
 		}
 	}

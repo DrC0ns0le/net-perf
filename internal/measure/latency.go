@@ -43,19 +43,16 @@ func startLatencyWorker(worker *Worker) {
 	randSleep := time.Duration(float64(5*time.Second) * (float64(h) / (1 << 64)))
 	time.Sleep(randSleep)
 
-	test := &latency.Client{
-		SourceIP: net.ParseIP(worker.sourceIP),
-		TargetIP: net.ParseIP(worker.targetIP),
-	}
+	var (
+		test = &latency.Client{
+			SourceIP: net.ParseIP(worker.sourceIP),
+			TargetIP: net.ParseIP(worker.targetIP),
+		}
+		wg                      = &sync.WaitGroup{}
+		workerCtx, workerCancel = context.WithCancel(context.Background())
 
-	worker.logger.Debugf("Starting latency measurement on %s\n", worker.iface.Name)
-	wg := &sync.WaitGroup{}
-	workerCtx, workerCancel := context.WithCancel(context.Background())
-	ticker := time.NewTicker(15 * time.Second)
-	for {
-		select {
-		case <-ticker.C:
-			ctx, _ := context.WithTimeout(workerCtx, 5*time.Second)
+		doMeasure = func() {
+			ctx, cancel := context.WithTimeout(workerCtx, 5*time.Second)
 
 			wg.Add(1)
 			go func() {
@@ -83,6 +80,19 @@ func startLatencyWorker(worker *Worker) {
 
 			}()
 
+			wg.Wait()
+			cancel()
+		}
+	)
+
+	worker.logger.Debugf("Starting latency measurement on %s\n", worker.iface.Name)
+
+	ticker := time.NewTicker(15 * time.Second)
+	doMeasure()
+	for {
+		select {
+		case <-ticker.C:
+			doMeasure()
 		case <-worker.stopCh:
 			worker.logger.Info("stopping latency measurement")
 
@@ -154,28 +164,40 @@ func generateLatencyMetrics(data latency.Result, iface netctl.WGInterface) {
 func unregisterLatencyMetrics(iface netctl.WGInterface) error {
 	pathName := generatePathName(iface.LocalID, iface.RemoteID)
 
-	metrics := []*prometheus.GaugeVec{
-		latencyStatus,
-		latencyLoss,
-		latencyDuration,
-		latencyJitter,
+	for _, protocol := range []string{"tcp", "icmp"} {
+		generateLatencyMetrics(latency.Result{Status: 0, Protocol: protocol}, iface)
+		latencyStatus.WithLabelValues(
+			protocol,
+			iface.LocalID,
+			iface.RemoteID,
+			iface.IPVersion,
+			pathName,
+		).Set(math.NaN())
+
 	}
 
-	for _, metric := range metrics {
-		for _, protocol := range []string{"tcp", "icmp"} {
-			ok := metric.DeleteLabelValues(
-				protocol,
-				iface.LocalID,
-				iface.RemoteID,
-				iface.IPVersion,
-				pathName,
-			)
+	// metrics := []*prometheus.GaugeVec{
+	// 	latencyStatus,
+	// 	latencyLoss,
+	// 	latencyDuration,
+	// 	latencyJitter,
+	// }
 
-			if !ok {
-				return fmt.Errorf("failed to delete %s latency metrics for %s", protocol, iface.Name)
-			}
-		}
-	}
+	// for _, metric := range metrics {
+	// 	for _, protocol := range []string{"tcp", "icmp"} {
+	// 		ok := metric.DeleteLabelValues(
+	// 			protocol,
+	// 			iface.LocalID,
+	// 			iface.RemoteID,
+	// 			iface.IPVersion,
+	// 			pathName,
+	// 		)
+
+	// 		if !ok {
+	// 			return fmt.Errorf("failed to delete %s latency metrics for %s", protocol, iface.Name)
+	// 		}
+	// 	}
+	// }
 
 	return nil
 }

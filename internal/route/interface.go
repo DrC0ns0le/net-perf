@@ -9,6 +9,9 @@ func (rm *RouteManager) GetSiteRoutes(site int) map[int]int {
 }
 
 func (rm *RouteManager) UpdateLocalRoutes(routes map[int]int) {
-	rm.CentralisedRouter.UpdateSiteRoutes(rm.siteID, routes)
-	rm.rtUpdateCh <- struct{}{}
+	updated := rm.CentralisedRouter.UpdateSiteRoutes(rm.siteID, routes)
+
+	if updated {
+		rm.rtUpdateCh <- struct{}{}
+	}
 }

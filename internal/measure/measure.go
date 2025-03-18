@@ -1,6 +1,7 @@
 package measure
 
 import (
+	"flag"
 	"fmt"
 	"sync"
 	"time"
@@ -10,6 +11,10 @@ import (
 	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
+)
+
+var (
+	workerUpdateInterval = flag.Duration("worker.interval", 15*time.Second, "update interval for worker")
 )
 
 type Worker struct {
@@ -176,7 +181,7 @@ func (m *ServiceManager) manageWorkers() {
 	}
 
 	manageWorkers()
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(*workerUpdateInterval)
 	for {
 		select {
 		case <-ticker.C:
@@ -222,6 +227,8 @@ func (m *ServiceManager) Start() error {
 		}(s)
 	}
 
+	// TODO: fix this error handling/collection, it is flawed
+	// if s.Start() is blocking and never returns, the waitGroup is never done, and errCh is never closed
 	// Close the error channel when all services have started
 	go func() {
 		wg.Wait()

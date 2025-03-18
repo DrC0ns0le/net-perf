@@ -17,7 +17,7 @@ var (
 	bandwidthRetryDelay        = flag.Duration("bandwidth.retrydelay", 250*time.Millisecond, "delay between retries")
 	bandwidthTimeout           = flag.Duration("bandwidth.timeout", 3*time.Second, "timeout for bandwidth measurement")
 	bandwidthStatsInterval     = flag.Duration("bandwidth.statsinterval", 1*time.Second, "interval for sending bandwidth measurement stats, also used for heartbeat")
-	bandwidthChannelBufferSize = flag.Int("bandwidth.channelbuffer", 100, "buffered packets in server receive channel")
+	bandwidthChannelBufferSize = flag.Int("bandwidth.channelbuffer", 1000, "buffered packets in server receive channel")
 
 	// server side
 	bandwidthOutOfOrder = flag.Int("bandwidth.outoforder", 0, "threshold for out-of-order packets")

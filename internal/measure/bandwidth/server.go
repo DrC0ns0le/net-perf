@@ -88,6 +88,7 @@ func (s *Server) Serve() {
 
 	s.logger.Infof("bandwidth server started")
 	s.processPacket()
+	s.logger.Infof("bandwidth server stopped")
 }
 
 func (s *Server) processPacket() {

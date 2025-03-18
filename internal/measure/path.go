@@ -113,26 +113,34 @@ func generatePathLatencyMetrics(data pathping.Result, iface netctl.WGInterface) 
 func unregisterPathLatencyMetrics(iface netctl.WGInterface) error {
 	pathName := generatePathName(iface.LocalID, iface.RemoteID)
 
-	metrics := []*prometheus.GaugeVec{
-		pathLatencyDuration,
-		pathLatencyLoss,
-		pathLatencyStatus,
-	}
+	generatePathLatencyMetrics(pathping.Result{Status: 0, Protocol: "pathping"}, iface)
+	pathLatencyStatus.WithLabelValues(
+		"pathping",
+		iface.LocalID,
+		iface.RemoteID,
+		pathName,
+	).Set(math.NaN())
 
-	for _, metric := range metrics {
-		for _, protocol := range []string{"pathping"} {
-			ok := metric.DeleteLabelValues(
-				protocol,
-				iface.LocalID,
-				iface.RemoteID,
-				pathName,
-			)
+	// metrics := []*prometheus.GaugeVec{
+	// 	pathLatencyDuration,
+	// 	pathLatencyLoss,
+	// 	pathLatencyStatus,
+	// }
 
-			if !ok {
-				return fmt.Errorf("failed to delete %s latency metrics for %s", protocol, iface.Name)
-			}
-		}
-	}
+	// for _, metric := range metrics {
+	// 	for _, protocol := range []string{"pathping"} {
+	// 		ok := metric.DeleteLabelValues(
+	// 			protocol,
+	// 			iface.LocalID,
+	// 			iface.RemoteID,
+	// 			pathName,
+	// 		)
+
+	// 		if !ok {
+	// 			return fmt.Errorf("failed to delete %s latency metrics for %s", protocol, iface.Name)
+	// 		}
+	// 	}
+	// }
 
 	return nil
 }

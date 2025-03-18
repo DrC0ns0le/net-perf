@@ -45,7 +45,7 @@ func (w *routeWatchdog) Start() {
 			return
 		case <-ticker.C:
 			w.routeTable.Lock()
-			needUpdate := w.checkSystemRTAlignment() || w.checkBirdChanges()
+			needUpdate := w.checkSystemRTAlignment() || w.checkRouterChanges()
 			w.routeTable.Unlock()
 
 			// only update if there is a change
@@ -95,7 +95,7 @@ routeCheck:
 	return false
 }
 
-func (w *routeWatchdog) checkBirdChanges() bool {
+func (w *routeWatchdog) checkRouterChanges() bool {
 	needUpdate := false
 	for _, mode := range []string{"v4", "v6"} {
 		_, hash, err := w.router.GetRoutes(mode)

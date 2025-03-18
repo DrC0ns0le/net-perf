@@ -52,20 +52,16 @@ func startBandwidthWorker(worker *Worker) {
 		data bandwidth.Result
 		err  error
 
-		test = bandwidth.NewMeasureClient(worker.sourceIP, worker.targetIP, worker.logger)
-	)
+		wg                      = &sync.WaitGroup{}
+		test                    = bandwidth.NewMeasureClient(worker.sourceIP, worker.targetIP, worker.logger)
+		workerCtx, workerCancel = context.WithCancel(context.Background())
 
-	worker.logger.Debugf("starting bandwidth measurement on %s\n", worker.iface.Name)
-	wg := &sync.WaitGroup{}
-	workerCtx, workerCancel := context.WithCancel(context.Background())
-	ticker := time.NewTicker(60 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			ctx, _ := context.WithTimeout(workerCtx, 5*time.Second)
+		doMeasure = func() {
+			ctx, cancel := context.WithTimeout(workerCtx, 5*time.Second)
 
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				// measure
 				data, err = test.MeasureUDP(ctx)
 				if err != nil {
@@ -76,6 +72,23 @@ func startBandwidthWorker(worker *Worker) {
 				generateBandwidthMetrics(data, worker.iface)
 			}()
 
+			wg.Wait()
+			cancel()
+		}
+	)
+
+	worker.logger.Debugf("starting bandwidth measurement on %s\n", worker.iface.Name)
+
+	// start ticker
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	// initial measurement
+	doMeasure()
+	for {
+		select {
+		case <-ticker.C:
+			doMeasure()
 		case <-worker.stopCh:
 			worker.logger.Infof("stopping bandwidth measurement on %s", worker.iface.Name)
 
@@ -175,30 +188,42 @@ func generateBandwidthMetrics(data bandwidth.Result, iface netctl.WGInterface) {
 func unregisterBandwidthMetrics(data bandwidth.Result, iface netctl.WGInterface) error {
 	pathName := generatePathName(iface.LocalID, iface.RemoteID)
 
-	metrics := []*prometheus.GaugeVec{
-		bandwidthStatus,
-		bandwidthJitter,
-		bandwidthPacketLoss,
-		bandwidthResult,
-		bandwidthOutOfOrder,
-	}
+	generateBandwidthMetrics(bandwidth.Result{Status: 0, Protocol: data.Protocol, TargetBandwidth: data.TargetBandwidth, PacketSize: data.PacketSize, TargetDuration: data.TargetDuration}, iface)
+	bandwidthStatus.WithLabelValues(
+		data.Protocol,
+		iface.LocalID,
+		iface.RemoteID,
+		iface.IPVersion,
+		strconv.Itoa(data.TargetBandwidth),
+		strconv.Itoa(data.PacketSize),
+		strconv.Itoa(data.TargetDuration),
+		pathName,
+	).Set(math.NaN())
 
-	for _, metric := range metrics {
-		ok := metric.DeleteLabelValues(
-			data.Protocol,
-			iface.LocalID,
-			iface.RemoteID,
-			iface.IPVersion,
-			strconv.Itoa(data.TargetBandwidth),
-			strconv.Itoa(data.PacketSize),
-			strconv.Itoa(data.TargetDuration),
-			pathName,
-		)
+	// metrics := []*prometheus.GaugeVec{
+	// 	bandwidthStatus,
+	// 	bandwidthJitter,
+	// 	bandwidthPacketLoss,
+	// 	bandwidthResult,
+	// 	bandwidthOutOfOrder,
+	// }
 
-		if !ok {
-			return fmt.Errorf("failed to delete %s bandwidth metrics for %s", data.Protocol, iface.Name)
-		}
-	}
+	// for _, metric := range metrics {
+	// 	ok := metric.DeleteLabelValues(
+	// 		data.Protocol,
+	// 		iface.LocalID,
+	// 		iface.RemoteID,
+	// 		iface.IPVersion,
+	// 		strconv.Itoa(data.TargetBandwidth),
+	// 		strconv.Itoa(data.PacketSize),
+	// 		strconv.Itoa(data.TargetDuration),
+	// 		pathName,
+	// 	)
+
+	// 	if !ok {
+	// 		return fmt.Errorf("failed to delete %s bandwidth metrics for %s", data.Protocol, iface.Name)
+	// 	}
+	// }
 
 	return nil
 }

@@ -87,7 +87,7 @@ func (r *CentralisedRouter) run() {
 }
 
 func (r *CentralisedRouter) Refresh(ctx context.Context) error {
-	const topN = 10 // number of shortest paths to consider
+	const topN = 5 // number of shortest paths to consider
 
 	// get all active sites
 	paths, err := finder.GetAllPaths(ctx)
@@ -142,6 +142,9 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 			wg := sync.WaitGroup{}
 			resultsChan := make(chan result, topN*topN)
 
+			ctx, cancel := context.WithTimeout(context.Background(), 10**costContextTimeout)
+			defer cancel()
+
 			for i, p := range fPath {
 				for j, v := range rPath {
 					wg.Add(1)
@@ -150,7 +153,7 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 						defer wg.Done()
 						fullPath := append(p.Path, v.Path[1:]...)
 
-						res, err := r.measurePathLatency(fullPath)
+						res, err := r.measurePathLatency(ctx, fullPath)
 						if err != nil {
 							r.logger.Errorf("error measuring path %v: %v", fullPath, err)
 							return
@@ -248,7 +251,7 @@ func (r *CentralisedRouter) Distribute(ctx context.Context) error {
 
 // UpdateSiteRoutes updates the routes for a specific site.
 // NOTE, this purges all other routes
-func (r *CentralisedRouter) UpdateSiteRoutes(site int, routes map[int]int) {
+func (r *CentralisedRouter) UpdateSiteRoutes(site int, routes map[int]int) bool {
 	r.siteRoutesMu.Lock()
 	defer r.siteRoutesMu.Unlock()
 
@@ -287,9 +290,11 @@ func (r *CentralisedRouter) UpdateSiteRoutes(site int, routes map[int]int) {
 		r.logger.Infof("centralised route table updated %v",
 			routes)
 	}
+
+	return changed
 }
 
-func (r *CentralisedRouter) measurePathLatency(path []int) (int, error) {
+func (r *CentralisedRouter) measurePathLatency(ctx context.Context, path []int) (int, error) {
 	measurementPath := func(p []int) []int32 {
 		np := make([]int32, len(p))
 		for i, v := range p {
@@ -311,8 +316,6 @@ func (r *CentralisedRouter) measurePathLatency(path []int) (int, error) {
 
 		client := measurepb.NewMeasureClient(conn)
 
-		ctx, cancel := context.WithTimeout(context.Background(), *costContextTimeout)
-		defer cancel()
 		res, err := client.PathLatency(ctx, &measurepb.PathLatencyRequest{
 			Path:     measurementPath,
 			Count:    10,
