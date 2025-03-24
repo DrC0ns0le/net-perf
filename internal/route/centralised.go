@@ -162,7 +162,7 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 						resultsChan <- result{
 							forwardRank: i + 1,
 							returnRank:  j + 1,
-							latency:     res,
+							latency:     res + (5 * len(fullPath)), // add additional penalty of 5ms per hop
 							path:        fullPath,
 						}
 					}(p, v, i, j)
@@ -183,26 +183,52 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 
 			// update routes
 			if len(results) == 0 {
-				r.logger.Errorf("no routes found for site %d to %d", site, target)
-				r.logger.Infof("forward path: %v", fPath)
-				r.logger.Infof("return path: %v", rPath)
+				r.logger.Debugf("forward path: %v", fPath)
+				r.logger.Debugf("return path: %v", rPath)
+				return fmt.Errorf("no routes found for site %d to %d", site, target)
 			}
-			bestPath := results[0].path
-			mid := -1
-			for i, v := range bestPath {
-				if v == target {
-					mid = i
-					break
+
+			// temporarily workaround to prevent route loops
+			success := false
+			for _, res := range results {
+				bestPath := res.path
+
+				// find the middle site
+				mid := -1
+				for i, v := range bestPath {
+					if v == target {
+						mid = i
+						break
+					}
 				}
-			}
-			for i := 0; i < len(bestPath)-2; i++ {
-				if i < mid {
-					sites[bestPath[i]][target] = bestPath[i+1]
-				} else {
-					sites[bestPath[i]][site] = bestPath[i+1]
+
+				// update routes
+				for i := 0; i < len(bestPath)-2; i++ {
+					if i < mid {
+						if sites[bestPath[i]][target] != -1 && sites[bestPath[i]][target] != bestPath[i+1] {
+							continue
+						}
+						sites[bestPath[i]][target] = bestPath[i+1]
+					} else {
+						if sites[bestPath[i]][site] != -1 && sites[bestPath[i]][site] != bestPath[i+1] {
+							continue
+						}
+						sites[bestPath[i]][site] = bestPath[i+1]
+					}
 				}
+
+				success = true
+				break
 			}
+			if !success {
+				return fmt.Errorf("no routes found for site %d to %d", site, target)
+			}
+
 		}
+	}
+
+	if err := r.checkTooManyHops(sites); err != nil {
+		return err
 	}
 
 	r.siteRoutesMu.Lock()
@@ -326,6 +352,37 @@ func (r *CentralisedRouter) measurePathLatency(ctx context.Context, path []int) 
 		}
 		return int(res.Latency), nil
 	}
+}
+
+func (r *CentralisedRouter) checkTooManyHops(routeMap map[int]map[int]int) error {
+	for source, paths := range routeMap {
+		for dst, via := range paths {
+			if dst != via {
+				count := 0
+				currentVia := via
+
+				for {
+					next, exists := routeMap[currentVia][dst]
+					if !exists {
+						break
+					}
+
+					count += 1
+					if count > len(routeMap) { // hop count should be less than the total number of sites
+						return fmt.Errorf("too many hops for route %d -> %d", source, dst)
+					}
+
+					if next == dst {
+						break
+					}
+
+					currentVia = next
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func convertToInt32Map(input map[int]int) map[int32]int32 {

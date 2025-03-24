@@ -87,6 +87,13 @@ func (g *Graph) RefreshWeights(ctx context.Context) error {
 		return fmt.Errorf("failed to get network paths: %w", err)
 	}
 
+	// Initialize matrix with infinity
+	for i := range g.matrix {
+		for j := range g.matrix[i] {
+			g.matrix[i][j] = math.Inf(1)
+		}
+	}
+
 	for _, path := range paths {
 		newCost, err := cost.GetPathCost(ctx, path.Source+64512, path.Target+64512)
 		if err != nil {

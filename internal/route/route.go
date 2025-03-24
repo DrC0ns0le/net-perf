@@ -140,7 +140,7 @@ alignmentLoop:
 			return nil
 		case <-timer.C:
 			timer.Stop()
-			if rm.CentralisedRouter != nil && rm.CentralisedRouter.updatedAt.After(time.Now().Add(-*updateInterval)) {
+			if rm.CentralisedRouter != nil && rm.CentralisedRouter.updatedAt.After(time.Now().Add(-*updateInterval*3)) {
 				// This means that route table update was already triggered by centralised router
 				// No need to update
 				rm.logger.Debugf("skipping route table update as centralised router has updated the route table recently")
@@ -259,12 +259,11 @@ func (rm *RouteManager) addToRouteTable(route []routers.Route) error {
 			continue
 		} else {
 			// we need to handle this route, ie running through the routing algorithms to find the gw
-			if rm.CentralisedRouter != nil && rm.CentralisedRouter.updatedAt.After(time.Now().Add(-*updateInterval)) {
+			if rm.CentralisedRouter != nil && rm.CentralisedRouter.updatedAt.After(time.Now().Add(-*updateInterval*3)) {
 				if err := rm.centralisedBestPath(ctx, r); err != nil {
 					return fmt.Errorf("error adding route via centralised route selection: %w", err)
 				}
-			}
-			if rm.graphReady {
+			} else if rm.graphReady {
 				if err := rm.graphBasedShortestPath(ctx, r); err != nil {
 					return fmt.Errorf("error selecting graph based shortest path: %w", err)
 				}

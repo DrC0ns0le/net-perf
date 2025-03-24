@@ -36,8 +36,6 @@ func (w *linkWatchdog) Start() {
 	w.logger.Infof("starting link watchdog service")
 	ticker := time.NewTicker(*linkUpdateInterval)
 	defer ticker.Stop()
-
-	var iface netctl.WGInterface
 	for {
 		select {
 		case <-ticker.C:
@@ -51,9 +49,9 @@ func (w *linkWatchdog) Start() {
 					w.rtUpdateCh <- struct{}{}
 				}
 			}()
-		case iface = <-w.wgUpdateCh:
+		case iface := <-w.wgUpdateCh:
 			go func() {
-				err := w.addLink(iface.Name)
+				err := w.addLink(iface)
 				if err != nil {
 					w.logger.Errorf("failed to handle new interface: %v", err)
 				}
@@ -152,19 +150,14 @@ func (w *linkWatchdog) manageLink() (bool, error) {
 	return updated, nil
 }
 
-func (w *linkWatchdog) addLink(iface string) error {
+func (w *linkWatchdog) addLink(iface netctl.WGInterface) error {
 
-	err := tunables.ConfigureInterface(iface)
+	err := tunables.ConfigureInterface(iface.Name)
 	if err != nil {
 		w.logger.Errorf("error configuring sysctls for %s: %v\n", iface, err)
 	}
 
-	wgIface, err := netctl.ParseWGInterface(iface)
-	if err != nil {
-		return err
-	}
-
-	remoteID, err := strconv.Atoi(wgIface.RemoteID)
+	remoteID, err := strconv.Atoi(iface.RemoteID)
 	if err != nil {
 		return fmt.Errorf("failed to convert remote ID to int: %w", err)
 	}

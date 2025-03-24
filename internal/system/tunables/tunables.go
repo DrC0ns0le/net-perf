@@ -85,6 +85,11 @@ func Init() error {
 		}
 	}
 
+	// Configure loopback interface
+	if err := ConfigureInterface("lo"); err != nil {
+		return err
+	}
+
 	return nil
 }
 

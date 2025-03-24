@@ -4,13 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"net"
 	"sort"
 	"strconv"
-	"time"
 
-	"github.com/DrC0ns0le/net-perf/internal/route/finder"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
 	pb "github.com/DrC0ns0le/net-perf/pkg/pb/management"
@@ -143,18 +140,6 @@ func tracePath(routeMap map[int]map[int]int) {
 	}
 	sort.Ints(sources)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	graph, err := finder.NewGraph(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println("Network Topology:")
-	fmt.Println("---------------")
-	fmt.Println(graph.String())
-
 	// Print routing table
 	fmt.Println("\nRouting Table:")
 	fmt.Println("-------------")
@@ -168,16 +153,8 @@ func tracePath(routeMap map[int]map[int]int) {
 		})
 
 		for _, route := range routes {
-			nPath, err := graph.GetTopNShortestPaths(source, route.Dest, 3)
-			if err != nil {
-				logger.Errorf("Dijkstra failed to get shortest path for %d -> %d: %v", source, route.Dest, err)
-				continue
-			}
 			fmt.Printf("  To: %d\n", route.Dest)
-			fmt.Printf("    Bird BGP: %v\n", route.Via)
-			for i, p := range nPath {
-				fmt.Printf("    Dijkstra %d: %v\n", i, p.Path[1:])
-			}
+			fmt.Printf("    Via: %v\n", route.Via)
 		}
 	}
 

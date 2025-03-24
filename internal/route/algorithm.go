@@ -87,7 +87,7 @@ func (rm *RouteManager) calculateTotalCost(ctx context.Context, asPath []int) (f
 	return totalCost, nil
 }
 
-func (rm *RouteManager) graphBasedShortestPath(ctx context.Context, route routers.Route) error {
+func (rm *RouteManager) graphBasedShortestPath(_ context.Context, route routers.Route) error {
 	rm.PathMapMu.Lock()
 	defer rm.PathMapMu.Unlock()
 

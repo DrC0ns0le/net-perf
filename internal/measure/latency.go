@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/measure/latency"
-	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/cespare/xxhash"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -64,7 +63,7 @@ func startLatencyWorker(worker *Worker) {
 				}
 
 				// generate metrics
-				generateLatencyMetrics(data, worker.iface)
+				generateLatencyMetrics(data, worker)
 			}()
 
 			wg.Add(1)
@@ -76,7 +75,7 @@ func startLatencyWorker(worker *Worker) {
 				}
 
 				// generate metrics
-				generateLatencyMetrics(data, worker.iface)
+				generateLatencyMetrics(data, worker)
 
 			}()
 
@@ -102,7 +101,7 @@ func startLatencyWorker(worker *Worker) {
 			wg.Wait()
 
 			// remove worker metrics
-			err := unregisterLatencyMetrics(worker.iface)
+			err := unregisterLatencyMetrics(worker)
 			if err != nil {
 				worker.logger.Errorf("error unregistering latency metrics: %v", err)
 			}
@@ -112,7 +111,7 @@ func startLatencyWorker(worker *Worker) {
 	}
 }
 
-func generateLatencyMetrics(data latency.Result, iface netctl.WGInterface) {
+func generateLatencyMetrics(data latency.Result, worker *Worker) {
 	var avgLatency float64
 	var jitter float64
 	var loss float64
@@ -126,78 +125,55 @@ func generateLatencyMetrics(data latency.Result, iface netctl.WGInterface) {
 		loss = math.NaN()
 	}
 
-	pathName := generatePathName(iface.LocalID, iface.RemoteID)
+	pathName := generatePathName(worker.iface.LocalID, worker.iface.RemoteID)
 
 	latencyStatus.WithLabelValues(
 		data.Protocol,
-		iface.LocalID,
-		iface.RemoteID,
-		iface.IPVersion,
+		worker.iface.LocalID,
+		worker.iface.RemoteID,
+		worker.iface.IPVersion,
 		pathName,
 	).Set(float64(data.Status))
 
 	latencyLoss.WithLabelValues(
 		data.Protocol,
-		iface.LocalID,
-		iface.RemoteID,
-		iface.IPVersion,
+		worker.iface.LocalID,
+		worker.iface.RemoteID,
+		worker.iface.IPVersion,
 		pathName,
 	).Set(loss)
 
 	latencyDuration.WithLabelValues(
 		data.Protocol,
-		iface.LocalID,
-		iface.RemoteID,
-		iface.IPVersion,
+		worker.iface.LocalID,
+		worker.iface.RemoteID,
+		worker.iface.IPVersion,
 		pathName,
 	).Set(avgLatency)
 
 	latencyJitter.WithLabelValues(
 		data.Protocol,
-		iface.LocalID,
-		iface.RemoteID,
-		iface.IPVersion,
+		worker.iface.LocalID,
+		worker.iface.RemoteID,
+		worker.iface.IPVersion,
 		pathName,
 	).Set(jitter)
 }
 
-func unregisterLatencyMetrics(iface netctl.WGInterface) error {
-	pathName := generatePathName(iface.LocalID, iface.RemoteID)
+func unregisterLatencyMetrics(worker *Worker) error {
+	pathName := generatePathName(worker.iface.LocalID, worker.iface.RemoteID)
 
 	for _, protocol := range []string{"tcp", "icmp"} {
-		generateLatencyMetrics(latency.Result{Status: 0, Protocol: protocol}, iface)
+		generateLatencyMetrics(latency.Result{Status: 0, Protocol: protocol}, worker)
 		latencyStatus.WithLabelValues(
 			protocol,
-			iface.LocalID,
-			iface.RemoteID,
-			iface.IPVersion,
+			worker.iface.LocalID,
+			worker.iface.RemoteID,
+			worker.iface.IPVersion,
 			pathName,
 		).Set(math.NaN())
 
 	}
-
-	// metrics := []*prometheus.GaugeVec{
-	// 	latencyStatus,
-	// 	latencyLoss,
-	// 	latencyDuration,
-	// 	latencyJitter,
-	// }
-
-	// for _, metric := range metrics {
-	// 	for _, protocol := range []string{"tcp", "icmp"} {
-	// 		ok := metric.DeleteLabelValues(
-	// 			protocol,
-	// 			iface.LocalID,
-	// 			iface.RemoteID,
-	// 			iface.IPVersion,
-	// 			pathName,
-	// 		)
-
-	// 		if !ok {
-	// 			return fmt.Errorf("failed to delete %s latency metrics for %s", protocol, iface.Name)
-	// 		}
-	// 	}
-	// }
 
 	return nil
 }
