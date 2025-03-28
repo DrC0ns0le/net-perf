@@ -7,6 +7,7 @@ import (
 	"net"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
@@ -27,14 +28,13 @@ var (
 	routeMap = map[int]map[int]int{}
 
 	logger = logging.NewDefaultLogger()
+
+	nodes = map[int]*grpc.ClientConn{}
 )
 
 func main() {
 
 	flag.Parse()
-
-	// setup gRPC client
-	nodes := map[int]*grpc.ClientConn{}
 
 	for _, site := range sites {
 		sitesSet[site] = true
@@ -145,6 +145,15 @@ func tracePath(routeMap map[int]map[int]int) {
 	fmt.Println("-------------")
 	for _, source := range sources {
 		fmt.Printf("\nSource: %d\n", source)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		s, err := pb.NewManagementClient(nodes[source]).GetState(ctx, &pb.GetStateRequest{Key: "update_method", Namespace: "route"})
+		if err != nil {
+			logger.Errorf("error getting update method for source %d: %v", source, err)
+			continue
+		}
+		fmt.Printf("Update Method: %s\n", s.Value)
+		fmt.Printf("Updated at: %v\n", time.Unix(0, s.Timestamp*1000))
 		routes := routingTable[source]
 
 		// Sort routes by destination for consistent output

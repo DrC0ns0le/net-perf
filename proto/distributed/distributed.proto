@@ -1,14 +1,9 @@
 syntax = "proto3";
 package distributed;
 option go_package = "github.com/DrC0ns0le/net-perf/pkg/pb/distributed;distributed";
-import "google/protobuf/empty.proto";
 
 message SiteRoute {
   map<int32, int32> route = 1;
-}
-
-message FullRoute {
-  map<int32, SiteRoute> route = 1;
 }
 
 message GetRouteRequest {
@@ -23,6 +18,5 @@ message UpdateRouteResponse {
 
 service RouteService {
   rpc GetRoute(GetRouteRequest) returns (SiteRoute) {};
-  rpc GetFullRoute(google.protobuf.Empty) returns (FullRoute) {};
   rpc UpdateRoute(SiteRoute) returns (UpdateRouteResponse) {};
 }

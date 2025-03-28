@@ -8,7 +8,6 @@ package distributed
 
 import (
 	context "context"
-	empty "github.com/golang/protobuf/ptypes/empty"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -20,9 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RouteService_GetRoute_FullMethodName     = "/distributed.RouteService/GetRoute"
-	RouteService_GetFullRoute_FullMethodName = "/distributed.RouteService/GetFullRoute"
-	RouteService_UpdateRoute_FullMethodName  = "/distributed.RouteService/UpdateRoute"
+	RouteService_GetRoute_FullMethodName    = "/distributed.RouteService/GetRoute"
+	RouteService_UpdateRoute_FullMethodName = "/distributed.RouteService/UpdateRoute"
 )
 
 // RouteServiceClient is the client API for RouteService service.
@@ -30,7 +28,6 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type RouteServiceClient interface {
 	GetRoute(ctx context.Context, in *GetRouteRequest, opts ...grpc.CallOption) (*SiteRoute, error)
-	GetFullRoute(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*FullRoute, error)
 	UpdateRoute(ctx context.Context, in *SiteRoute, opts ...grpc.CallOption) (*UpdateRouteResponse, error)
 }
 
@@ -52,16 +49,6 @@ func (c *routeServiceClient) GetRoute(ctx context.Context, in *GetRouteRequest, 
 	return out, nil
 }
 
-func (c *routeServiceClient) GetFullRoute(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*FullRoute, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FullRoute)
-	err := c.cc.Invoke(ctx, RouteService_GetFullRoute_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *routeServiceClient) UpdateRoute(ctx context.Context, in *SiteRoute, opts ...grpc.CallOption) (*UpdateRouteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateRouteResponse)
@@ -77,7 +64,6 @@ func (c *routeServiceClient) UpdateRoute(ctx context.Context, in *SiteRoute, opt
 // for forward compatibility.
 type RouteServiceServer interface {
 	GetRoute(context.Context, *GetRouteRequest) (*SiteRoute, error)
-	GetFullRoute(context.Context, *empty.Empty) (*FullRoute, error)
 	UpdateRoute(context.Context, *SiteRoute) (*UpdateRouteResponse, error)
 	mustEmbedUnimplementedRouteServiceServer()
 }
@@ -91,9 +77,6 @@ type UnimplementedRouteServiceServer struct{}
 
 func (UnimplementedRouteServiceServer) GetRoute(context.Context, *GetRouteRequest) (*SiteRoute, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRoute not implemented")
-}
-func (UnimplementedRouteServiceServer) GetFullRoute(context.Context, *empty.Empty) (*FullRoute, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetFullRoute not implemented")
 }
 func (UnimplementedRouteServiceServer) UpdateRoute(context.Context, *SiteRoute) (*UpdateRouteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateRoute not implemented")
@@ -137,24 +120,6 @@ func _RouteService_GetRoute_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
-func _RouteService_GetFullRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(empty.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RouteServiceServer).GetFullRoute(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RouteService_GetFullRoute_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RouteServiceServer).GetFullRoute(ctx, req.(*empty.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _RouteService_UpdateRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SiteRoute)
 	if err := dec(in); err != nil {
@@ -183,10 +148,6 @@ var RouteService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRoute",
 			Handler:    _RouteService_GetRoute_Handler,
-		},
-		{
-			MethodName: "GetFullRoute",
-			Handler:    _RouteService_GetFullRoute_Handler,
 		},
 		{
 			MethodName: "UpdateRoute",

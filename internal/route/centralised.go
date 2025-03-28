@@ -29,7 +29,7 @@ type CentralisedRouter struct {
 
 	concensus system.ConsensusInterface
 
-	siteRoutes   map[int]map[int]int // site to site routes
+	siteRoutes   map[int]int // site to site routes
 	siteRoutesMu sync.RWMutex
 	updatedAt    time.Time
 
@@ -46,7 +46,7 @@ type result struct {
 func NewCentralisedRouter(logger logging.Logger, graph *finder.Graph, stopCh chan struct{}, consensus system.ConsensusInterface, localID int) *CentralisedRouter {
 	return &CentralisedRouter{
 		localID:    localID,
-		siteRoutes: make(map[int]map[int]int),
+		siteRoutes: make(map[int]int),
 
 		concensus: consensus,
 		graph:     graph,
@@ -74,10 +74,6 @@ func (r *CentralisedRouter) run() {
 				r.logger.Debug("centralised router updating and distributing routes")
 				if err := r.Refresh(ctx); err != nil {
 					r.logger.Errorf("error refreshing centralised router: %v", err)
-
-				}
-				if err := r.Distribute(ctx); err != nil {
-					r.logger.Errorf("error distributing centralised routes: %v", err)
 				}
 			} else {
 				r.logger.Debug("centralised router not leader or not healthy")
@@ -112,6 +108,9 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 		for site := range sites {
 			routes[site] = -1
 		}
+	}
+	if r.graph == nil {
+		return fmt.Errorf("graph is nil")
 	}
 	err = r.graph.RefreshWeights(ctx)
 	if err != nil {
@@ -231,10 +230,10 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 		return err
 	}
 
-	r.siteRoutesMu.Lock()
-	defer r.siteRoutesMu.Unlock()
-	r.siteRoutes = sites
-	r.updatedAt = time.Now()
+	// distribute routes
+	if err := r.Distribute(ctx, sites); err != nil {
+		r.logger.Errorf("error distributing centralised routes: %v", err)
+	}
 
 	return nil
 }
@@ -244,16 +243,13 @@ func (r *CentralisedRouter) getSiteRPCConn(site int) (*grpc.ClientConn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to site %d daemon: %w", site, err)
 	}
-
 	return conn, nil
 }
 
-func (r *CentralisedRouter) GetFullRouteMap() map[int]map[int]int { return r.siteRoutes }
+func (r *CentralisedRouter) GetSiteRouteMap(site int) map[int]int { return r.siteRoutes }
 
-func (r *CentralisedRouter) GetSiteRouteMap(site int) map[int]int { return r.siteRoutes[site] }
-
-func (r *CentralisedRouter) Distribute(ctx context.Context) error {
-	for site, routes := range r.siteRoutes {
+func (r *CentralisedRouter) Distribute(ctx context.Context, siteRoutes map[int]map[int]int) error {
+	for site, routes := range siteRoutes {
 		conn, err := r.getSiteRPCConn(site)
 		if err != nil {
 			return err
@@ -277,46 +273,38 @@ func (r *CentralisedRouter) Distribute(ctx context.Context) error {
 
 // UpdateSiteRoutes updates the routes for a specific site.
 // NOTE, this purges all other routes
-func (r *CentralisedRouter) UpdateSiteRoutes(site int, routes map[int]int) bool {
+func (r *CentralisedRouter) UpdateSiteRoutes(routes map[int]int) bool {
 	r.siteRoutesMu.Lock()
 	defer r.siteRoutesMu.Unlock()
 
-	// Check if routes actually changed
-	changed := true
-	if existing, ok := r.siteRoutes[site]; ok && len(existing) == len(routes) {
-		// Assume no changes until we find one
-		changed = false
+	// Assume no changes until we find one
+	changed := false
 
-		// Check each route
-		for k, v := range routes {
-			if existing[k] != v {
+	// Check each route
+	for k, v := range routes {
+		if r.siteRoutes[k] != v {
+			changed = true
+			break
+		}
+	}
+
+	// Check if all keys in existing are in routes
+	if !changed {
+		for k := range r.siteRoutes {
+			if _, ok := routes[k]; !ok {
 				changed = true
 				break
 			}
 		}
-
-		// Check if all keys in existing are in routes
-		if !changed {
-			for k := range existing {
-				if _, ok := routes[k]; !ok {
-					changed = true
-					break
-				}
-			}
+	}
+	if changed {
+		r.logger.Infof("centralised route table updated %v", routes)
+		r.siteRoutes = make(map[int]int)
+		for k, v := range routes {
+			r.siteRoutes[k] = v
 		}
 	}
-
-	// Update the routes
-	r.siteRoutes = map[int]map[int]int{
-		site: routes,
-	}
 	r.updatedAt = time.Now()
-
-	if changed {
-		r.logger.Infof("centralised route table updated %v",
-			routes)
-	}
-
 	return changed
 }
 

@@ -16,6 +16,8 @@ type Node struct {
 
 	Consensus *raft.Raft
 
+	StateTable *StateTable
+
 	Services         map[string]Service
 	RouteService     RouteInterface
 	ConsensusService ConsensusInterface
@@ -33,7 +35,6 @@ type Service interface {
 }
 
 type RouteInterface interface {
-	GetFullSiteRoutes() map[int]map[int]int
 	GetSiteRoutes(int) map[int]int
 	UpdateLocalRoutes(map[int]int)
 }

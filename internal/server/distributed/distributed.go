@@ -5,7 +5,6 @@ import (
 
 	"github.com/DrC0ns0le/net-perf/internal/system"
 	pb "github.com/DrC0ns0le/net-perf/pkg/pb/distributed"
-	"github.com/golang/protobuf/ptypes/empty"
 )
 
 type Server struct {
@@ -24,22 +23,6 @@ func (s *Server) GetRoute(ctx context.Context, req *pb.GetRouteRequest) (*pb.Sit
 
 	return &pb.SiteRoute{
 		Route: convertToInt32Map(route),
-	}, nil
-}
-
-func (s *Server) GetFullRoute(ctx context.Context, _ *empty.Empty) (*pb.FullRoute, error) {
-	route := s.r.GetFullSiteRoutes()
-
-	fullRoute := make(map[int32]*pb.SiteRoute)
-
-	for site, route := range route {
-		fullRoute[int32(site)] = &pb.SiteRoute{
-			Route: convertToInt32Map(route),
-		}
-	}
-
-	return &pb.FullRoute{
-		Route: fullRoute,
 	}, nil
 }
 

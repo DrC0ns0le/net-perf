@@ -32,6 +32,7 @@ func main() {
 		MeasureUpdateCh: make(chan struct{}, *updateChBufSize),
 
 		RouteTable: system.NewRouteTable(),
+		StateTable: system.NewStateTable(),
 
 		Logger: logging.NewDefaultLogger(),
 	}

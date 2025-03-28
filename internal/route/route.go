@@ -41,6 +41,8 @@ type RouteManager struct {
 	PathMapMu  sync.RWMutex
 	PathMap    map[string]net.IP // destination -> gateway
 
+	stateTable *system.StateTable
+
 	CentralisedRouter *CentralisedRouter
 	consensus         system.ConsensusInterface
 
@@ -59,6 +61,8 @@ func NewRouteManager(global *system.Node) *RouteManager {
 		customRouteProtocol: netlink.RouteProtocol(CustomRouteProtocol),
 
 		RouteTable: global.RouteTable,
+
+		stateTable: global.StateTable,
 
 		PathMap: make(map[string]net.IP),
 
@@ -111,14 +115,13 @@ func (rm *RouteManager) Start() error {
 	if err != nil {
 		rm.logger.Errorf("error in updating router route table: %v", err)
 	}
-	removed, err := netctl.RemoveAllManagedRoutes(CustomRouteProtocol)
-	if err != nil {
-		rm.logger.Errorf("failed to remove all routes, removed only %d routes: %v", removed, err)
-	}
-	rm.logger.Debugf("removed %d routes", removed)
 	err = rm.applyRouteTable()
 	if err != nil {
 		rm.logger.Errorf("error in applying router route table: %v", err)
+	}
+	err = rm.removeOldKernelRoutes()
+	if err != nil {
+		rm.logger.Errorf("error in removing old routes: %v", err)
 	}
 
 	rm.RouteTable.MarkReady()
@@ -196,7 +199,7 @@ func (rm *RouteManager) SyncRouteTable() error {
 	if err = rm.UpdateRouteTable(); err != nil {
 		return fmt.Errorf("error updating route table: %w", err)
 	}
-	if err = rm.removeOldRoutes(); err != nil {
+	if err = rm.removeOldKernelRoutes(); err != nil {
 		return fmt.Errorf("error removing outdated routes: %w", err)
 	}
 	return rm.applyRouteTable()
@@ -263,12 +266,17 @@ func (rm *RouteManager) addToRouteTable(route []routers.Route) error {
 				if err := rm.centralisedBestPath(ctx, r); err != nil {
 					return fmt.Errorf("error adding route via centralised route selection: %w", err)
 				}
+				rm.stateTable.Set("update_method", "centralised")
 			} else if rm.graphReady {
 				if err := rm.graphBasedShortestPath(ctx, r); err != nil {
 					return fmt.Errorf("error selecting graph based shortest path: %w", err)
 				}
-			} else if err := rm.selectLowestCostBGPPath(ctx, r); err != nil {
-				return fmt.Errorf("error selecting lowest cost BGP path: %w", err)
+				rm.stateTable.Set("update_method", "graph")
+			} else {
+				rm.stateTable.Set("update_method", "bgp")
+				if err := rm.selectLowestCostBGPPath(ctx, r); err != nil {
+					return fmt.Errorf("error selecting lowest cost BGP path: %w", err)
+				}
 			}
 		}
 	}
@@ -300,7 +308,7 @@ func (rm *RouteManager) applyRouteTable() error {
 	return nil
 }
 
-func (rm *RouteManager) removeOldRoutes() error {
+func (rm *RouteManager) removeOldKernelRoutes() error {
 	routes, err := netctl.ListManagedRoutes(CustomRouteProtocol)
 	if err != nil {
 		return fmt.Errorf("error getting managed routes: %w", err)

@@ -185,7 +185,7 @@ func (rm *RouteManager) centralisedBestPath(_ context.Context, route routers.Rou
 		} else {
 			return "v4"
 		}
-	}(), rm.CentralisedRouter.siteRoutes[rm.siteID][asToSiteID(originAS)])
+	}(), rm.CentralisedRouter.siteRoutes[asToSiteID(originAS)])
 	if err != nil {
 		return fmt.Errorf("error finding site gw: %w", err)
 	}

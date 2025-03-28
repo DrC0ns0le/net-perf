@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	Management_GetRouteTable_FullMethodName = "/management.Management/GetRouteTable"
+	Management_GetState_FullMethodName      = "/management.Management/GetState"
 )
 
 // ManagementClient is the client API for Management service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ManagementClient interface {
 	GetRouteTable(ctx context.Context, in *GetRouteTableRequest, opts ...grpc.CallOption) (*GetRouteTableResponse, error)
+	GetState(ctx context.Context, in *GetStateRequest, opts ...grpc.CallOption) (*GetStateResponse, error)
 }
 
 type managementClient struct {
@@ -47,11 +49,22 @@ func (c *managementClient) GetRouteTable(ctx context.Context, in *GetRouteTableR
 	return out, nil
 }
 
+func (c *managementClient) GetState(ctx context.Context, in *GetStateRequest, opts ...grpc.CallOption) (*GetStateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetStateResponse)
+	err := c.cc.Invoke(ctx, Management_GetState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ManagementServer is the server API for Management service.
 // All implementations must embed UnimplementedManagementServer
 // for forward compatibility.
 type ManagementServer interface {
 	GetRouteTable(context.Context, *GetRouteTableRequest) (*GetRouteTableResponse, error)
+	GetState(context.Context, *GetStateRequest) (*GetStateResponse, error)
 	mustEmbedUnimplementedManagementServer()
 }
 
@@ -64,6 +77,9 @@ type UnimplementedManagementServer struct{}
 
 func (UnimplementedManagementServer) GetRouteTable(context.Context, *GetRouteTableRequest) (*GetRouteTableResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRouteTable not implemented")
+}
+func (UnimplementedManagementServer) GetState(context.Context, *GetStateRequest) (*GetStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetState not implemented")
 }
 func (UnimplementedManagementServer) mustEmbedUnimplementedManagementServer() {}
 func (UnimplementedManagementServer) testEmbeddedByValue()                    {}
@@ -104,6 +120,24 @@ func _Management_GetRouteTable_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Management_GetState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagementServer).GetState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Management_GetState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagementServer).GetState(ctx, req.(*GetStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Management_ServiceDesc is the grpc.ServiceDesc for Management service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -114,6 +148,10 @@ var Management_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRouteTable",
 			Handler:    _Management_GetRouteTable_Handler,
+		},
+		{
+			MethodName: "GetState",
+			Handler:    _Management_GetState_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -21,6 +21,21 @@ message GetRouteTableResponse {
     RouteTable routes = 1;
 }
 
+message GetStateRequest {
+    string key = 1;
+    string namespace = 2;
+}
+
+message GetStateResponse {
+    string value = 1;
+    int64 timestamp = 2;
+}
+
+
+
+
 service Management {
     rpc GetRouteTable(GetRouteTableRequest) returns (GetRouteTableResponse) {};
+    rpc GetState(GetStateRequest) returns (GetStateResponse) {};
+
 }

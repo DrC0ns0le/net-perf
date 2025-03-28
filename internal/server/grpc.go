@@ -63,7 +63,7 @@ func (s *GRPCServer) Stop() error {
 }
 
 func (s *GRPCServer) register() {
-	managementpb.RegisterManagementServer(s.server, management.NewServer())
+	managementpb.RegisterManagementServer(s.server, management.NewServer(s.node))
 	measurepb.RegisterMeasureServer(s.server, measure.NewServer(s.node))
 	distributedpb.RegisterRouteServiceServer(s.server, distributed.NewServer(s.node))
 }

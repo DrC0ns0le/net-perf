@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/DrC0ns0le/net-perf/internal/route"
+	"github.com/DrC0ns0le/net-perf/internal/system"
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	pb "github.com/DrC0ns0le/net-perf/pkg/pb/management"
 	"github.com/vishvananda/netlink"
@@ -11,10 +12,14 @@ import (
 
 type Server struct {
 	pb.UnimplementedManagementServer
+
+	stateTable *system.StateTable
 }
 
-func NewServer() *Server {
-	return &Server{}
+func NewServer(global *system.Node) *Server {
+	return &Server{
+		stateTable: global.StateTable,
+	}
 }
 
 func (s *Server) GetRouteTable(ctx context.Context, req *pb.GetRouteTableRequest) (*pb.GetRouteTableResponse, error) {
@@ -48,4 +53,16 @@ func (s *Server) GetRouteTable(ctx context.Context, req *pb.GetRouteTableRequest
 	}
 
 	return resp, nil
+}
+
+func (s *Server) GetState(ctx context.Context, req *pb.GetStateRequest) (*pb.GetStateResponse, error) {
+	val, ts, err := s.stateTable.GetFromNamespace(req.Key, req.Namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.GetStateResponse{
+		Value:     val,
+		Timestamp: ts.UnixMicro(),
+	}, nil
 }
