@@ -147,13 +147,23 @@ func tracePath(routeMap map[int]map[int]int) {
 		fmt.Printf("\nSource: %d\n", source)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		s, err := pb.NewManagementClient(nodes[source]).GetState(ctx, &pb.GetStateRequest{Key: "update_method", Namespace: "route"})
+		conn := pb.NewManagementClient(nodes[source])
+		s, err := conn.GetState(ctx, &pb.GetStateRequest{Key: "update_method", Namespace: "route"})
 		if err != nil {
 			logger.Errorf("error getting update method for source %d: %v", source, err)
 			continue
 		}
 		fmt.Printf("Update Method: %s\n", s.Value)
 		fmt.Printf("Updated at: %v\n", time.Unix(0, s.Timestamp*1000))
+
+		c, err := conn.GetConsensusState(ctx, &pb.GetConsensusStateRequest{})
+		if err != nil {
+			logger.Errorf("error getting consensus state for source %d: %v", source, err)
+			continue
+		}
+
+		fmt.Printf("Consensus State: %s\n", c.State)
+
 		routes := routingTable[source]
 
 		// Sort routes by destination for consistent output

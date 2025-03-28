@@ -31,11 +31,17 @@ message GetStateResponse {
     int64 timestamp = 2;
 }
 
+message GetConsensusStateRequest {}
+
+message GetConsensusStateResponse {
+    string state = 1;
+}
+
 
 
 
 service Management {
     rpc GetRouteTable(GetRouteTableRequest) returns (GetRouteTableResponse) {};
     rpc GetState(GetStateRequest) returns (GetStateResponse) {};
-
+    rpc GetConsensusState(GetConsensusStateRequest) returns (GetConsensusStateResponse) {};
 }

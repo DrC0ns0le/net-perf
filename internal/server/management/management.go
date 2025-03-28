@@ -13,12 +13,14 @@ import (
 type Server struct {
 	pb.UnimplementedManagementServer
 
-	stateTable *system.StateTable
+	stateTable       *system.StateTable
+	consensusService system.ConsensusInterface
 }
 
 func NewServer(global *system.Node) *Server {
 	return &Server{
-		stateTable: global.StateTable,
+		stateTable:       global.StateTable,
+		consensusService: global.ConsensusService,
 	}
 }
 
@@ -64,5 +66,16 @@ func (s *Server) GetState(ctx context.Context, req *pb.GetStateRequest) (*pb.Get
 	return &pb.GetStateResponse{
 		Value:     val,
 		Timestamp: ts.UnixMicro(),
+	}, nil
+}
+
+func (s *Server) GetConsensusState(ctx context.Context, req *pb.GetConsensusStateRequest) (*pb.GetConsensusStateResponse, error) {
+	return &pb.GetConsensusStateResponse{
+		State: func() string {
+			if s.consensusService.Leader() {
+				return "leader"
+			}
+			return "follower"
+		}(),
 	}, nil
 }

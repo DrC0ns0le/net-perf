@@ -3,7 +3,6 @@ package system
 import (
 	"github.com/DrC0ns0le/net-perf/internal/system/netctl"
 	"github.com/DrC0ns0le/net-perf/pkg/logging"
-	"github.com/hashicorp/raft"
 )
 
 type Node struct {
@@ -13,9 +12,6 @@ type Node struct {
 	MeasureUpdateCh chan struct{}
 
 	RouteTable *RouteTable
-
-	Consensus *raft.Raft
-
 	StateTable *StateTable
 
 	Services         map[string]Service
