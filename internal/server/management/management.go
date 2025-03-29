@@ -2,6 +2,7 @@ package management
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/DrC0ns0le/net-perf/internal/route"
 	"github.com/DrC0ns0le/net-perf/internal/system"
@@ -15,12 +16,16 @@ type Server struct {
 
 	stateTable       *system.StateTable
 	consensusService system.ConsensusInterface
+	r                system.RouteInterface
+	peers            []int
 }
 
 func NewServer(global *system.Node) *Server {
 	return &Server{
 		stateTable:       global.StateTable,
 		consensusService: global.ConsensusService,
+		r:                global.RouteService,
+		peers:            global.Peers,
 	}
 }
 
@@ -57,6 +62,35 @@ func (s *Server) GetRouteTable(ctx context.Context, req *pb.GetRouteTableRequest
 	return resp, nil
 }
 
+func (s *Server) GetCentralisedRouteTable(ctx context.Context, req *pb.GetRouteTableRequest) (*pb.GetRouteTableMapResponse, error) {
+	routes := make(map[int]int)
+	for _, peer := range s.peers {
+		routes[peer] = s.r.GetCentralisedRoute(peer)
+		if routes[peer] == -1 {
+			return nil, fmt.Errorf("no route to peer %d", peer)
+		}
+	}
+
+	return &pb.GetRouteTableMapResponse{
+		Routes: convertToInt32Map(routes),
+	}, nil
+}
+
+func (s *Server) GetGraphRouteTable(ctx context.Context, req *pb.GetRouteTableRequest) (*pb.GetRouteTableMapResponse, error) {
+	routes := make(map[int]int)
+
+	for _, peer := range s.peers {
+		routes[peer] = s.r.GetGraphRoute(peer)
+		if routes[peer] == -1 {
+			return nil, fmt.Errorf("no route to peer %d", peer)
+		}
+	}
+
+	return &pb.GetRouteTableMapResponse{
+		Routes: convertToInt32Map(routes),
+	}, nil
+}
+
 func (s *Server) GetState(ctx context.Context, req *pb.GetStateRequest) (*pb.GetStateResponse, error) {
 	val, ts, err := s.stateTable.GetFromNamespace(req.Key, req.Namespace)
 	if err != nil {
@@ -78,4 +112,12 @@ func (s *Server) GetConsensusState(ctx context.Context, req *pb.GetConsensusStat
 			return "follower"
 		}(),
 	}, nil
+}
+
+func convertToInt32Map(route map[int]int) map[int32]int32 {
+	route32 := make(map[int32]int32)
+	for k, v := range route {
+		route32[int32(k)] = int32(v)
+	}
+	return route32
 }

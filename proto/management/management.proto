@@ -21,6 +21,10 @@ message GetRouteTableResponse {
     RouteTable routes = 1;
 }
 
+message GetRouteTableMapResponse {
+    map<int32, int32> routes = 1;
+}
+
 message GetStateRequest {
     string key = 1;
     string namespace = 2;
@@ -42,6 +46,8 @@ message GetConsensusStateResponse {
 
 service Management {
     rpc GetRouteTable(GetRouteTableRequest) returns (GetRouteTableResponse) {};
+    rpc GetCentralisedRouteTable(GetRouteTableRequest) returns (GetRouteTableMapResponse) {};
+    rpc GetGraphRouteTable(GetRouteTableRequest) returns (GetRouteTableMapResponse) {};
     rpc GetState(GetStateRequest) returns (GetStateResponse) {};
     rpc GetConsensusState(GetConsensusStateRequest) returns (GetConsensusStateResponse) {};
 }

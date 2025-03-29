@@ -57,6 +57,8 @@ func (w *linkWatchdog) Start() {
 				}
 			}()
 
+			time.Sleep(150 * time.Millisecond)
+
 			w.measureUpdateCh <- struct{}{}
 			w.rtUpdateCh <- struct{}{}
 

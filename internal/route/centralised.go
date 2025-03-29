@@ -2,6 +2,7 @@ package route
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"sort"
 	"sync"
@@ -19,7 +20,13 @@ import (
 )
 
 const (
-	rpcPort = 5122
+	rpcPort             = 5122
+	initialStartTimeout = 5 * time.Second
+)
+
+var (
+	disableCentralisedRoutingFastStart = flag.Bool("router.disable-fast-start", false, "disable fast start for centralised routing")
+	fastStartAttempts                  = flag.Int("router.fast-start-attempts", 3, "fast start attempts for centralised routing")
 )
 
 type CentralisedRouter struct {
@@ -62,21 +69,39 @@ func (r *CentralisedRouter) Start() error {
 }
 
 func (r *CentralisedRouter) run() {
+	timer := time.NewTimer(initialStartTimeout)
 	ticker := time.NewTicker(*updateInterval / 2)
+
+	routine := func() {
+		if r.concensus != nil && r.concensus.Leader() && r.concensus.Healty() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10**costContextTimeout)
+			defer cancel()
+			r.logger.Debug("centralised router updating and distributing routes")
+			if err := r.Refresh(ctx); err != nil {
+				r.logger.Errorf("error refreshing centralised router: %v", err)
+			}
+		} else {
+			r.logger.Debug("centralised router not leader or not healthy")
+		}
+	}
+
 	for {
 		select {
 		case <-r.stopCh:
 			return
 		case <-ticker.C:
-			if r.concensus != nil && r.concensus.Leader() && r.concensus.Healty() {
-				ctx, cancel := context.WithTimeout(context.Background(), 10**costContextTimeout)
-				defer cancel()
-				r.logger.Debug("centralised router updating and distributing routes")
-				if err := r.Refresh(ctx); err != nil {
-					r.logger.Errorf("error refreshing centralised router: %v", err)
-				}
-			} else {
-				r.logger.Debug("centralised router not leader or not healthy")
+			routine()
+		case <-timer.C:
+			if !*disableCentralisedRoutingFastStart || *fastStartAttempts == 0 {
+				timer.Stop()
+				break
+			}
+			if r.concensus != nil && r.concensus.Healty() {
+				routine()
+				timer.Stop()
+			} else if *fastStartAttempts > 0 {
+				*fastStartAttempts--
+				timer.Reset(initialStartTimeout)
 			}
 		}
 	}
@@ -110,11 +135,13 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 		}
 	}
 	if r.graph == nil {
-		return fmt.Errorf("graph is nil")
+		r.graph, err = finder.NewGraph(ctx)
+		if err != nil {
+			return fmt.Errorf("error initializing graph: %w", err)
+		}
 	}
-	err = r.graph.RefreshWeights(ctx)
-	if err != nil {
-		return err
+	if err := r.graph.RefreshWeights(ctx); err != nil {
+		return fmt.Errorf("error refreshing graph: %w", err)
 	}
 
 	for site, routes := range sites {
@@ -141,9 +168,6 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 			wg := sync.WaitGroup{}
 			resultsChan := make(chan result, topN*topN)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 10**costContextTimeout)
-			defer cancel()
-
 			for i, p := range fPath {
 				for j, v := range rPath {
 					wg.Add(1)
@@ -161,7 +185,7 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 						resultsChan <- result{
 							forwardRank: i + 1,
 							returnRank:  j + 1,
-							latency:     res + (5 * len(fullPath)), // add additional penalty of 5ms per hop
+							latency:     res + (10 * len(fullPath)), // add additional penalty of 10ms per hop
 							path:        fullPath,
 						}
 					}(p, v, i, j)
@@ -189,7 +213,8 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 
 			// temporarily workaround to prevent route loops
 			success := false
-			for _, res := range results {
+		selectionLoop:
+			for rank, res := range results {
 				bestPath := res.path
 
 				// find the middle site
@@ -205,12 +230,14 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 				for i := 0; i < len(bestPath)-2; i++ {
 					if i < mid {
 						if sites[bestPath[i]][target] != -1 && sites[bestPath[i]][target] != bestPath[i+1] {
-							continue
+							r.logger.Infof("skipping route %v ranked %d to prevent loop", bestPath, rank)
+							continue selectionLoop
 						}
 						sites[bestPath[i]][target] = bestPath[i+1]
 					} else {
 						if sites[bestPath[i]][site] != -1 && sites[bestPath[i]][site] != bestPath[i+1] {
-							continue
+							r.logger.Infof("skipping route %v ranked %d to prevent loop", bestPath, rank)
+							continue selectionLoop
 						}
 						sites[bestPath[i]][site] = bestPath[i+1]
 					}
@@ -246,7 +273,7 @@ func (r *CentralisedRouter) getSiteRPCConn(site int) (*grpc.ClientConn, error) {
 	return conn, nil
 }
 
-func (r *CentralisedRouter) GetSiteRouteMap(site int) map[int]int { return r.siteRoutes }
+func (r *CentralisedRouter) GetSiteRouteMap() map[int]int { return r.siteRoutes }
 
 func (r *CentralisedRouter) Distribute(ctx context.Context, siteRoutes map[int]map[int]int) error {
 	for site, routes := range siteRoutes {

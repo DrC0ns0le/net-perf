@@ -87,6 +87,13 @@ func (rm *RouteManager) calculateTotalCost(ctx context.Context, asPath []int) (f
 	return totalCost, nil
 }
 
+// graphBasedShortestPath adds a route to the RouteTable, after running it through the graph-based
+// shortest path algorithm.
+//
+// If the origin AS is greater than 65000, the graph-based shortest path algorithm is not used,
+// and instead the lowest cost BGP path is selected.
+//
+// The function returns an error if any of the algorithms return an error.
 func (rm *RouteManager) graphBasedShortestPath(_ context.Context, route routers.Route) error {
 	rm.PathMapMu.Lock()
 	defer rm.PathMapMu.Unlock()
@@ -123,6 +130,11 @@ func (rm *RouteManager) graphBasedShortestPath(_ context.Context, route routers.
 		}
 	}
 
+	// no need to add route if origin AS is local, rely on host default gateway route
+	if originAS == rm.Config.ASNumber {
+		return nil
+	}
+
 	mode := "v4"
 	if route.Network.IP.To4() == nil {
 		mode = "v6"
@@ -149,6 +161,9 @@ func (rm *RouteManager) graphBasedShortestPath(_ context.Context, route routers.
 	return nil
 }
 
+// centralisedBestPath adds a route to the RouteTable by referencing the centralised route table.
+//
+// The function returns an error if it fails to add the route to the RouteTable.
 func (rm *RouteManager) centralisedBestPath(_ context.Context, route routers.Route) error {
 	// routes are stored in the centralised route table for each site in rm.CentralisedRouter.siteRoutes[rm.siteID]
 
@@ -177,6 +192,11 @@ func (rm *RouteManager) centralisedBestPath(_ context.Context, route routers.Rou
 		if originAS < 64512 || originAS >= 65000 {
 			return fmt.Errorf("no origin AS found")
 		}
+	}
+
+	// no need to add route if origin AS is local, rely on host default gateway route
+	if originAS == rm.Config.ASNumber {
+		return nil
 	}
 
 	gw, err := rm.findSiteGW(func() string {

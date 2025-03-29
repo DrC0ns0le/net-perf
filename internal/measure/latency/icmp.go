@@ -23,6 +23,10 @@ func (c *Client) MeasureICMP(ctx context.Context) (Result, error) {
 		return Result{Status: 0, Protocol: "icmp"}, err
 	}
 
+	if pinger.Statistics().PacketLoss == 100 {
+		return Result{Status: 0, Protocol: "icmp"}, err
+	}
+
 	return Result{
 		Status:     1,
 		Protocol:   "icmp",

@@ -19,9 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Management_GetRouteTable_FullMethodName     = "/management.Management/GetRouteTable"
-	Management_GetState_FullMethodName          = "/management.Management/GetState"
-	Management_GetConsensusState_FullMethodName = "/management.Management/GetConsensusState"
+	Management_GetRouteTable_FullMethodName            = "/management.Management/GetRouteTable"
+	Management_GetCentralisedRouteTable_FullMethodName = "/management.Management/GetCentralisedRouteTable"
+	Management_GetGraphRouteTable_FullMethodName       = "/management.Management/GetGraphRouteTable"
+	Management_GetState_FullMethodName                 = "/management.Management/GetState"
+	Management_GetConsensusState_FullMethodName        = "/management.Management/GetConsensusState"
 )
 
 // ManagementClient is the client API for Management service.
@@ -29,6 +31,8 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ManagementClient interface {
 	GetRouteTable(ctx context.Context, in *GetRouteTableRequest, opts ...grpc.CallOption) (*GetRouteTableResponse, error)
+	GetCentralisedRouteTable(ctx context.Context, in *GetRouteTableRequest, opts ...grpc.CallOption) (*GetRouteTableMapResponse, error)
+	GetGraphRouteTable(ctx context.Context, in *GetRouteTableRequest, opts ...grpc.CallOption) (*GetRouteTableMapResponse, error)
 	GetState(ctx context.Context, in *GetStateRequest, opts ...grpc.CallOption) (*GetStateResponse, error)
 	GetConsensusState(ctx context.Context, in *GetConsensusStateRequest, opts ...grpc.CallOption) (*GetConsensusStateResponse, error)
 }
@@ -45,6 +49,26 @@ func (c *managementClient) GetRouteTable(ctx context.Context, in *GetRouteTableR
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetRouteTableResponse)
 	err := c.cc.Invoke(ctx, Management_GetRouteTable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managementClient) GetCentralisedRouteTable(ctx context.Context, in *GetRouteTableRequest, opts ...grpc.CallOption) (*GetRouteTableMapResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRouteTableMapResponse)
+	err := c.cc.Invoke(ctx, Management_GetCentralisedRouteTable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managementClient) GetGraphRouteTable(ctx context.Context, in *GetRouteTableRequest, opts ...grpc.CallOption) (*GetRouteTableMapResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRouteTableMapResponse)
+	err := c.cc.Invoke(ctx, Management_GetGraphRouteTable_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +100,8 @@ func (c *managementClient) GetConsensusState(ctx context.Context, in *GetConsens
 // for forward compatibility.
 type ManagementServer interface {
 	GetRouteTable(context.Context, *GetRouteTableRequest) (*GetRouteTableResponse, error)
+	GetCentralisedRouteTable(context.Context, *GetRouteTableRequest) (*GetRouteTableMapResponse, error)
+	GetGraphRouteTable(context.Context, *GetRouteTableRequest) (*GetRouteTableMapResponse, error)
 	GetState(context.Context, *GetStateRequest) (*GetStateResponse, error)
 	GetConsensusState(context.Context, *GetConsensusStateRequest) (*GetConsensusStateResponse, error)
 	mustEmbedUnimplementedManagementServer()
@@ -90,6 +116,12 @@ type UnimplementedManagementServer struct{}
 
 func (UnimplementedManagementServer) GetRouteTable(context.Context, *GetRouteTableRequest) (*GetRouteTableResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRouteTable not implemented")
+}
+func (UnimplementedManagementServer) GetCentralisedRouteTable(context.Context, *GetRouteTableRequest) (*GetRouteTableMapResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCentralisedRouteTable not implemented")
+}
+func (UnimplementedManagementServer) GetGraphRouteTable(context.Context, *GetRouteTableRequest) (*GetRouteTableMapResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetGraphRouteTable not implemented")
 }
 func (UnimplementedManagementServer) GetState(context.Context, *GetStateRequest) (*GetStateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetState not implemented")
@@ -132,6 +164,42 @@ func _Management_GetRouteTable_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ManagementServer).GetRouteTable(ctx, req.(*GetRouteTableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Management_GetCentralisedRouteTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRouteTableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagementServer).GetCentralisedRouteTable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Management_GetCentralisedRouteTable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagementServer).GetCentralisedRouteTable(ctx, req.(*GetRouteTableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Management_GetGraphRouteTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRouteTableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagementServer).GetGraphRouteTable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Management_GetGraphRouteTable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagementServer).GetGraphRouteTable(ctx, req.(*GetRouteTableRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -182,6 +250,14 @@ var Management_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRouteTable",
 			Handler:    _Management_GetRouteTable_Handler,
+		},
+		{
+			MethodName: "GetCentralisedRouteTable",
+			Handler:    _Management_GetCentralisedRouteTable_Handler,
+		},
+		{
+			MethodName: "GetGraphRouteTable",
+			Handler:    _Management_GetGraphRouteTable_Handler,
 		},
 		{
 			MethodName: "GetState",

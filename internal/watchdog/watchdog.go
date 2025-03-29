@@ -42,7 +42,8 @@ func NewRouteWatchdog(global *system.Node) watchdogComponent {
 		routeTable: global.RouteTable,
 		rtCache:    make(map[string]hash.Hash64),
 		rtUpdateCh: global.RTUpdateCh,
-		logger:     global.Logger.With("component", "route"),
+
+		logger: global.Logger.With("component", "route"),
 	}
 }
 

@@ -8,21 +8,26 @@ import (
 )
 
 type Server struct {
-	r system.RouteInterface
+	r     system.RouteInterface
+	peers []int
 	pb.UnimplementedRouteServiceServer
 }
 
 func NewServer(global *system.Node) *Server {
 	return &Server{
-		r: global.RouteService,
+		r:     global.RouteService,
+		peers: global.Peers,
 	}
 }
 
 func (s *Server) GetRoute(ctx context.Context, req *pb.GetRouteRequest) (*pb.SiteRoute, error) {
-	route := s.r.GetSiteRoutes(int(req.Id))
+	routes := make(map[int]int)
+	for _, peer := range s.peers {
+		routes[peer] = s.r.GetCentralisedRoute(int(req.Id))
+	}
 
 	return &pb.SiteRoute{
-		Route: convertToInt32Map(route),
+		Route: convertToInt32Map(routes),
 	}, nil
 }
 

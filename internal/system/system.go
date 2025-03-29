@@ -31,7 +31,8 @@ type Service interface {
 }
 
 type RouteInterface interface {
-	GetSiteRoutes(int) map[int]int
+	GetCentralisedRoute(int) int
+	GetGraphRoute(int) int
 	UpdateLocalRoutes(map[int]int)
 }
 

@@ -101,9 +101,11 @@ func (rm *RouteManager) Start() error {
 	// Initialize graph
 	ctx, cancel := context.WithTimeout(context.Background(), *costContextTimeout)
 	defer cancel()
+	rm.graphReady = true
 	rm.Graph, err = finder.NewGraph(ctx)
-	if err != nil {
+	if err != nil || rm.Graph == nil {
 		rm.logger.Errorf("error initializing graph: %v", err)
+		rm.graphReady = false
 	}
 
 	// Initialize centralised router
