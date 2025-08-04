@@ -113,10 +113,11 @@ func SetPathCost(ctx context.Context, src, dst int) (float64, error) {
 		return 0, fmt.Errorf("unexpected cost of 0 for %d -> %d", src, dst)
 	}
 
-	switch dst {
-	case 64512:
-		cost = 3 * cost
-	}
+	// temporarily disable penalty
+	// switch dst {
+	// case 64512:
+	// 	cost = 3 * cost
+	// }
 
 	return cost, nil
 }

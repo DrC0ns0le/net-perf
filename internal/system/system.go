@@ -34,6 +34,7 @@ type RouteInterface interface {
 	GetCentralisedRoute(int) int
 	GetGraphRoute(int) int
 	UpdateLocalRoutes(map[int]int)
+	UpdateGraph() error
 }
 
 type ConsensusInterface interface {

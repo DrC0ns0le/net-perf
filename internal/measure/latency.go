@@ -64,6 +64,13 @@ func startLatencyWorker(worker *Worker) {
 
 				// generate metrics
 				generateLatencyMetrics(data, worker)
+				worker.workingMu.Lock()
+				if data.Status == 1 {
+					worker.working = true
+				} else {
+					worker.working = false
+				}
+				worker.workingMu.Unlock()
 			}()
 
 			wg.Add(1)

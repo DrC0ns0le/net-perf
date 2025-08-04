@@ -189,6 +189,9 @@ func (g *Graph) Dijkstra(start int) []float64 {
 
 // GetShortestPath returns the shortest path from start to end
 func (g *Graph) GetShortestPath(start, end int) ([]int, float64, error) {
+	if g == nil {
+		return nil, math.Inf(1), fmt.Errorf("graph is nil")
+	}
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	dist := g.Dijkstra(start)

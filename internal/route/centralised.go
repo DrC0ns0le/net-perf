@@ -27,6 +27,8 @@ const (
 var (
 	disableCentralisedRoutingFastStart = flag.Bool("router.disable-fast-start", false, "disable fast start for centralised routing")
 	fastStartAttempts                  = flag.Int("router.fast-start-attempts", 3, "fast start attempts for centralised routing")
+
+	disableCentralisedRouting = flag.Bool("router.centralised-routing", false, "Enable or disable centralised routing, defaults to false")
 )
 
 type CentralisedRouter struct {
@@ -92,7 +94,7 @@ func (r *CentralisedRouter) run() {
 		case <-ticker.C:
 			routine()
 		case <-timer.C:
-			if !*disableCentralisedRoutingFastStart || *fastStartAttempts == 0 {
+			if *disableCentralisedRoutingFastStart || *fastStartAttempts == 0 {
 				timer.Stop()
 				break
 			}
@@ -185,7 +187,7 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 						resultsChan <- result{
 							forwardRank: i + 1,
 							returnRank:  j + 1,
-							latency:     res + (10 * len(fullPath)), // add additional penalty of 10ms per hop
+							latency:     res + routePenalty(fullPath, site, target, res),
 							path:        fullPath,
 						}
 					}(p, v, i, j)
@@ -253,7 +255,7 @@ func (r *CentralisedRouter) Refresh(ctx context.Context) error {
 		}
 	}
 
-	if err := r.checkTooManyHops(sites); err != nil {
+	if err := r.checkForLoops(sites); err != nil {
 		return err
 	}
 
@@ -344,8 +346,13 @@ func (r *CentralisedRouter) measurePathLatency(ctx context.Context, path []int) 
 		return np
 	}(path)
 
+	const (
+		measurementCount    = 10
+		measurementInterval = 150
+	)
+
 	if path[0] == r.localID {
-		c := pathping.NewClient(10, 100*time.Millisecond)
+		c := pathping.NewClient(measurementCount, measurementCount*time.Millisecond)
 		res, err := c.Measure(path)
 		return int(res.Duration.Microseconds()), err
 	} else {
@@ -359,8 +366,8 @@ func (r *CentralisedRouter) measurePathLatency(ctx context.Context, path []int) 
 
 		res, err := client.PathLatency(ctx, &measurepb.PathLatencyRequest{
 			Path:     measurementPath,
-			Count:    10,
-			Interval: 100,
+			Count:    measurementCount,
+			Interval: measurementInterval,
 		})
 		if err != nil {
 			return 0, err
@@ -369,22 +376,24 @@ func (r *CentralisedRouter) measurePathLatency(ctx context.Context, path []int) 
 	}
 }
 
-func (r *CentralisedRouter) checkTooManyHops(routeMap map[int]map[int]int) error {
+func (r *CentralisedRouter) checkForLoops(routeMap map[int]map[int]int) error {
 	for source, paths := range routeMap {
 		for dst, via := range paths {
 			if dst != via {
-				count := 0
+				visited := make(map[int]bool)
 				currentVia := via
-
 				for {
+					// Mark current node as visited
+					visited[currentVia] = true
+
 					next, exists := routeMap[currentVia][dst]
 					if !exists {
 						break
 					}
 
-					count += 1
-					if count > len(routeMap) { // hop count should be less than the total number of sites
-						return fmt.Errorf("too many hops for route %d -> %d", source, dst)
+					// Check if we've already visited the next node (loop detected)
+					if visited[next] {
+						return fmt.Errorf("loop detected in route %d -> %d", source, dst)
 					}
 
 					if next == dst {
@@ -398,6 +407,20 @@ func (r *CentralisedRouter) checkTooManyHops(routeMap map[int]map[int]int) error
 	}
 
 	return nil
+}
+
+func routePenalty(route []int, src, dst, latency int) int {
+	penalty := len(route) * 10 // default penalty of 10ms per hop
+	// penalise route via site 0
+	if src != 0 && dst != 0 {
+		for _, v := range route {
+			if v == 0 {
+				penalty += latency
+			}
+		}
+	}
+
+	return penalty
 }
 
 func convertToInt32Map(input map[int]int) map[int32]int32 {

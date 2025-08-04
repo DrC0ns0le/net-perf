@@ -19,7 +19,7 @@ var (
 	pathPingBuf               = flag.Int("pathping.buffer", 128, "buffer size for path ping server")
 	pathPingMax               = flag.Int("pathping.max", 16, "max number of hops for path ping")
 	pathPingTimeout           = flag.Duration("pathping.timeout", 1*time.Second, "timeout for path ping")
-	pathPingProcessingHistory = flag.Int("pathping.processing.history", 10, "number of processing durations to keep track of")
+	pathPingProcessingHistory = flag.Int("pathping.processing.history", 100, "number of processing durations to keep track of")
 
 	// Maximum possible packet size based on maximum path length
 	maxPacketSize = 26 + (*pathPingMax * 4) // Fixed header (26) + max array size (pathPingMax * 4), each uint16 takes 2 bytes(path & pathver)
@@ -353,6 +353,8 @@ func (n *PathPingServer) cleanUpResults() {
 	}
 }
 
+const highProcessingDurationMultiplier = 100
+
 func (n *PathPingServer) updateProcessingDuration() {
 	var duration time.Duration
 	index := 0
@@ -361,6 +363,12 @@ func (n *PathPingServer) updateProcessingDuration() {
 		case <-n.done:
 			return
 		case duration = <-n.processingDurationCh:
+			avgDuration := n.getAverageProcessingDuration()
+			if avgDuration > 0 && duration > avgDuration*highProcessingDurationMultiplier {
+				n.config.Logger.Warnf("high processing duration: %v, average: %v", duration, n.getAverageProcessingDuration())
+				// do not include in average
+				continue
+			}
 			n.processingDuration[index] = duration
 			index++
 			if index == *pathPingProcessingHistory {

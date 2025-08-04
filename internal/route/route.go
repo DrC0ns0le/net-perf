@@ -259,29 +259,78 @@ func (rm *RouteManager) UpdateRouteTable() error {
 func (rm *RouteManager) addToRouteTable(route []routers.Route) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(len(route))**costContextTimeout)
 	defer cancel()
+
+	var attempted bool
+	var errors []error
+	successCount := 0
+	totalRoutes := 0
+
 	for _, r := range route {
 		if r.OriginAS == rm.Config.ASNumber || r.OriginAS == 0 || len(r.Paths) == 0 {
+			// Skip routes that don't need processing
 			continue
-		} else {
-			// we need to handle this route, ie running through the routing algorithms to find the gw
-			if rm.CentralisedRouter != nil && rm.CentralisedRouter.updatedAt.After(time.Now().Add(-*updateInterval*3)) {
-				if err := rm.centralisedBestPath(ctx, r); err != nil {
-					return fmt.Errorf("error adding route via centralised route selection: %w", err)
-				}
-				rm.stateTable.Set("update_method", "centralised")
-			} else if rm.graphReady {
-				if err := rm.graphBasedShortestPath(ctx, r); err != nil {
-					return fmt.Errorf("error selecting graph based shortest path: %w", err)
-				}
-				rm.stateTable.Set("update_method", "graph")
-			} else {
-				rm.stateTable.Set("update_method", "bgp")
-				if err := rm.selectLowestCostBGPPath(ctx, r); err != nil {
-					return fmt.Errorf("error selecting lowest cost BGP path: %w", err)
-				}
+		}
+
+		// Track that we're attempting to process this route
+		totalRoutes++
+
+		// Handle the route using appropriate algorithm with fallback
+		var err error
+		attempted = false
+
+		// Try centralised routing first if available
+		if rm.CentralisedRouter != nil && rm.CentralisedRouter.updatedAt.After(time.Now().Add(-*updateInterval*3)) {
+			attempted = true
+			rm.stateTable.Set("update_method", "centralised")
+			err = rm.centralisedBestPath(ctx, r)
+			if err != nil {
+				rm.logger.Warnf("Route %s: centralised routing failed, attempting fallback: %v", r.Network.IP, err)
 			}
 		}
+
+		// Fallback to graph-based routing if centralised failed or unavailable
+		if (err != nil || !attempted) && rm.graphReady {
+			if !attempted {
+				attempted = true
+				rm.stateTable.Set("update_method", "graph")
+			}
+
+			err = rm.graphBasedShortestPath(ctx, r)
+			if err != nil {
+				rm.logger.Warnf("Route %s: graph-based routing failed, attempting fallback: %v", r.Network.IP, err)
+			}
+		}
+
+		// Final fallback to BGP routing
+		if err != nil || !attempted {
+			if !attempted {
+				rm.stateTable.Set("update_method", "BGP")
+			}
+
+			err = rm.selectLowestCostBGPPath(ctx, r)
+			if err != nil {
+				err = fmt.Errorf("route %s: all routing methods failed - centralised, graph, and BGP: %w", r.Network.IP, err)
+				errors = append(errors, err)
+				rm.logger.Errorf("Error processing route %s: %v", r.Network.IP, err)
+			}
+		}
+
+		if err != nil {
+			successCount++
+		}
 	}
+
+	// Log summary and set the best algorithm used across all routes
+	if len(errors) > 0 {
+		rm.logger.Infof("Route processing completed: %d successful, %d failed out of %d routes",
+			successCount, len(errors), totalRoutes)
+
+		// Return a summary error with all individual errors
+		return fmt.Errorf("failed to process %d out of %d routes: %v",
+			len(errors), totalRoutes, errors)
+	}
+
+	rm.logger.Infof("Successfully processed all %d routes", successCount)
 
 	return nil
 }

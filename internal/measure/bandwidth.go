@@ -88,7 +88,20 @@ func startBandwidthWorker(worker *Worker) {
 	for {
 		select {
 		case <-ticker.C:
-			doMeasure()
+			worker.workingMu.RLock()
+			working := worker.working
+			worker.workingMu.RUnlock()
+
+			if !working {
+				// skip if interface is not working
+				worker.logger.Infof("skipping bandwidth measurement as interface is marked as not working")
+				data.Status = 0
+				generateBandwidthMetrics(data, worker.iface)
+				continue
+			} else {
+				doMeasure()
+			}
+
 		case <-worker.stopCh:
 			worker.logger.Infof("stopping bandwidth measurement on %s", worker.iface.Name)
 

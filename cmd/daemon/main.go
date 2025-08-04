@@ -66,8 +66,8 @@ func main() {
 	}
 
 	for _, s := range node.Services {
-		go func(s system.Service) {
-			err = s.Start()
+		go func(svc system.Service) {
+			err := svc.Start()
 			if err != nil {
 				node.Logger.Errorf("failed to start service: %v", err)
 			}

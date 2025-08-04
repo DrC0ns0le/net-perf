@@ -77,6 +77,10 @@ func (s *Server) GetCentralisedRouteTable(ctx context.Context, req *pb.GetRouteT
 }
 
 func (s *Server) GetGraphRouteTable(ctx context.Context, req *pb.GetRouteTableRequest) (*pb.GetRouteTableMapResponse, error) {
+	if err := s.r.UpdateGraph(); err != nil {
+		return nil, fmt.Errorf("error updating graph: %v", err)
+	}
+
 	routes := make(map[int]int)
 
 	for _, peer := range s.peers {

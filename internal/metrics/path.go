@@ -172,5 +172,9 @@ func (pm *PathMetrics) calculatePathCost() {
 		mathisCost = rttMs * C * math.Sqrt(effectiveLoss)
 	}
 
+	// temporarily disable jitter and loss
+	jitterMs = 0
+	mathisCost = 0
+
 	pm.Cost = (K1*(rttMs+mathisCost) + K2*jitterMs)
 }

@@ -75,7 +75,7 @@ func (c *Client) MeasureUDP(ctx context.Context) (Result, error) {
 			TargetDuration:  int(bandwidthDuration.Seconds()),
 		},
 
-		packetsCount: (uint32(*bandwidthBandwidth) * 1000000 * uint32(bandwidthDuration.Seconds())) / (uint32(*bandwidthPacketSize) * 8),
+		packetsCount: (uint32(*bandwidthBandwidth) * bandwidthExponent * uint32(bandwidthDuration.Seconds())) / (uint32(*bandwidthPacketSize) * 8),
 	}
 	defer cl.cleanup()
 
@@ -312,7 +312,7 @@ func (c *client) parseStats(statString string) error {
 			if testDuration <= 0 {
 				return fmt.Errorf("invalid test duration: %d", testDuration)
 			}
-			c.result.Bandwidth = (*bandwidthPacketSize * 8 * totalPacketsReceived) / (testDuration / 1000000)
+			c.result.Bandwidth = (*bandwidthPacketSize * 8 * totalPacketsReceived * bandwidthExponent) / testDuration
 		} else {
 			c.result.Status = 0
 		}

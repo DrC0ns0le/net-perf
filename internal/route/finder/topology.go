@@ -20,6 +20,10 @@ func GetAllPaths(ctx context.Context) ([]NetworkPath, error) {
 		return nil, err
 	}
 
+	if len(response.Data.Result) <= 0 {
+		return nil, fmt.Errorf("no valid paths were found")
+	}
+
 	var paths []NetworkPath
 	for _, result := range response.Data.Result {
 		src, err := strconv.Atoi(result.Metric.Source)

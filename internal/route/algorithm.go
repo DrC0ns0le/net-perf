@@ -233,7 +233,7 @@ func (rm *RouteManager) findSiteGW(mode string, via int) (net.IP, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("could not find gateway for site %d", via)
+	return nil, fmt.Errorf("could not find v%s gateway for site %d", mode, via)
 }
 
 func siteIDToAS(siteID int) int {

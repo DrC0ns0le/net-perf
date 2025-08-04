@@ -11,7 +11,7 @@ func (rm *RouteManager) GetCentralisedRoute(destination int) int {
 func (rm *RouteManager) UpdateLocalRoutes(routes map[int]int) {
 	updated := rm.CentralisedRouter.UpdateSiteRoutes(routes)
 
-	if updated {
+	if !*disableCentralisedRouting && updated {
 		rm.rtUpdateCh <- struct{}{}
 	}
 }
@@ -24,7 +24,12 @@ func (rm *RouteManager) GetGraphRoute(destination int) int {
 	path, _, err := rm.Graph.GetShortestPath(asToSiteID(rm.Config.ASNumber), destination)
 	if err != nil {
 		rm.logger.Errorf("error getting shortest path: %v", err)
+		return -1
 	}
 
 	return path[1]
+}
+
+func (rm *RouteManager) UpdateGraph() error {
+	return rm.SyncGraph()
 }

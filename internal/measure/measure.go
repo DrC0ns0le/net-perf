@@ -27,6 +27,9 @@ type Worker struct {
 	// Target port
 	targetPort int
 
+	workingMu sync.RWMutex
+	working   bool
+
 	// Stop channel
 	stopCh chan struct{}
 

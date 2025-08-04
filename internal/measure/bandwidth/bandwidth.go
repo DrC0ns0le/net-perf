@@ -9,9 +9,9 @@ import (
 
 var (
 	bandwidthPort              = flag.Int("bandwidth.port", 5121, "port for bandwidth measurement server")
-	bandwidthDuration          = flag.Duration("bandwidth.duration", 5*time.Second, "duration for bandwidth measurement")
-	bandwidthBandwidth         = flag.Int("bandwidth.bandwidth", 1, "bandwidth in mbps")
-	bandwidthPacketSize        = flag.Int("bandwidth.packetsize", 500, "packet size in bytes")
+	bandwidthDuration          = flag.Duration("bandwidth.duration", 2*time.Second, "duration for bandwidth measurement")
+	bandwidthBandwidth         = flag.Int("bandwidth.bandwidth", 512, "bandwidth in kilobits per second")
+	bandwidthPacketSize        = flag.Int("bandwidth.packetsize", 1000, "packet size in bytes")
 	bandwidthBufferSize        = flag.Int("bandwidth.buffer", 1500, "buffer size in bytes")
 	bandwidthMaxRetries        = flag.Int("bandwidth.maxretries", 4, "max number of retries")
 	bandwidthRetryDelay        = flag.Duration("bandwidth.retrydelay", 250*time.Millisecond, "delay between retries")
@@ -21,6 +21,10 @@ var (
 
 	// server side
 	bandwidthOutOfOrder = flag.Int("bandwidth.outoforder", 0, "threshold for out-of-order packets")
+)
+
+const (
+	bandwidthExponent = 1 << 10 // bit-shift exponent 2^10
 )
 
 type Packet struct {
@@ -90,8 +94,8 @@ type Result struct {
 
 func validateFlags() error {
 	// Validate bandwidth (in Mbps)
-	// Max safe bandwidth to avoid overflow when converting to bps (uint32_max/1000000)
-	const maxBandwidth = 4294 // ~ 4.2Gbps
+	// Max safe bandwidth to avoid overflow when converting to bps (uint32_max/1000)
+	const maxBandwidth = 4294967 // ~ 4.2Gbps
 	if *bandwidthBandwidth <= 0 {
 		return fmt.Errorf("bandwidth must be positive")
 	}
@@ -100,8 +104,8 @@ func validateFlags() error {
 	}
 
 	// Validate duration
-	// Check if duration * bandwidth * 1000000 would overflow uint32
-	maxSeconds := uint64(4294967295) / (uint64(*bandwidthBandwidth) * 1000000)
+	// Check if duration * bandwidth * 1000 would overflow uint32
+	maxSeconds := uint64(4294967295) / (uint64(*bandwidthBandwidth) * bandwidthExponent)
 	if bandwidthDuration.Seconds() > float64(maxSeconds) {
 		return fmt.Errorf("duration too large: would cause overflow in bandwidth calculations")
 	}
@@ -155,7 +159,7 @@ func validateFlags() error {
 	}
 
 	// Calculate packets per second to validate arithmetic
-	packetsPerSecond := (uint64(*bandwidthBandwidth) * 1000000 * uint64(bandwidthDuration.Seconds())) /
+	packetsPerSecond := (uint64(*bandwidthBandwidth) * bandwidthExponent * uint64(bandwidthDuration.Seconds())) /
 		(uint64(*bandwidthPacketSize) * 8)
 	if packetsPerSecond > uint64(^uint32(0)) {
 		return fmt.Errorf("parameter combination would cause overflow in packets per second calculation")
